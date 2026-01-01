@@ -35,4 +35,5 @@ export interface AppState {
   isGeneratingFullMovie: boolean;
   generatingVideoIds: number[];
   aspectRatio: AspectRatio;
+  enableCuts: boolean;
 }

@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type, Modality } from "@google/genai";
+import { GoogleGenAI, Type, Modality, HarmCategory, HarmBlockThreshold, SafetySetting } from "@google/genai";
 import { Scene, Script, AspectRatio } from "@/types";
 
 declare global {
@@ -28,13 +28,13 @@ const getClient = () => {
 };
 
 // Safety settings to disable content filters for creative content generation
-const safetySettings = [
-  { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'BLOCK_NONE' },
-] as const;
+const safetySettings: SafetySetting[] = [
+  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
+];
 
 // Enhanced error handling for API calls
 const handleApiError = (error: unknown, context: string): never => {
@@ -78,7 +78,8 @@ const handleApiError = (error: unknown, context: string): never => {
 export const generateScript = async (
   prompt: string,
   referenceVideoBase64?: string,
-  referenceImagesBase64?: string[]
+  referenceImagesBase64?: string[],
+  enableCuts: boolean = true
 ): Promise<Script> => {
   const ai = getClient();
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
@@ -110,19 +111,8 @@ export const generateScript = async (
     });
   }
 
-  const systemInstruction = `
-    You are an expert film director and scriptwriter.
-    Your goal is to create a production script for a ~72 second video (9 scenes × 8 seconds each).
-    The script MUST be broken down into exactly 9 key scenes, as we will be generating a 3x3 storyboard grid.
-
-    CRITICAL TIMING REQUIREMENT:
-    - Each scene is EXACTLY 8 seconds long (this is fixed by the video generation model).
-    - The timeRange for each scene MUST reflect 8-second intervals:
-      Scene 1: "00:00 - 00:08", Scene 2: "00:08 - 00:16", Scene 3: "00:16 - 00:24",
-      Scene 4: "00:24 - 00:32", Scene 5: "00:32 - 00:40", Scene 6: "00:40 - 00:48",
-      Scene 7: "00:48 - 00:56", Scene 8: "00:56 - 01:04", Scene 9: "01:04 - 01:12"
-    - Design the voiceoverText for each scene to be spoken naturally within 8 seconds (about 20-25 words max per scene).
-
+  // Build system instruction conditionally based on enableCuts
+  const cutsInstructions = enableCuts ? `
     MULTI-SHOT SCENES WITH CUTS:
     Each scene's visualDescription MUST include 2-3 camera cuts using the [cut] tag to create dynamic, professional videos.
     Start with a base shot description, then add [cut] tags for different angles.
@@ -139,15 +129,39 @@ export const generateScript = async (
 
     Example visualDescription with cuts:
     "A chef prepares ingredients in a kitchen [cut] close up shot of hands chopping vegetables [cut] insert shot of sizzling pan, camera moving left [cut] over the shoulder shot - in front of the chef - the finished dish"
+  ` : `
+    SINGLE-SHOT SCENES:
+    Each scene's visualDescription should describe a SINGLE continuous shot with smooth camera movement.
+    Focus on fluid motion and animation within a single camera perspective.
+    Do NOT use [cut] tags - keep each scene as one uninterrupted take.
+    Describe camera movements like "camera slowly pans right", "camera dollies forward", etc.
+  `;
 
+  const visualDescriptionHint = enableCuts
+    ? '- visualDescription: Multi-shot description with 2-3 [cut] tags for camera angle changes. Make it dynamic!'
+    : '- visualDescription: Single continuous shot with smooth camera movement. No cuts.';
+
+  const systemInstruction = `
+    You are an expert film director and scriptwriter.
+    Your goal is to create a production script for a ~72 second video (9 scenes × 8 seconds each).
+    The script MUST be broken down into exactly 9 key scenes, as we will be generating a 3x3 storyboard grid.
+
+    CRITICAL TIMING REQUIREMENT:
+    - Each scene is EXACTLY 8 seconds long (this is fixed by the video generation model).
+    - The timeRange for each scene MUST reflect 8-second intervals:
+      Scene 1: "00:00 - 00:08", Scene 2: "00:08 - 00:16", Scene 3: "00:16 - 00:24",
+      Scene 4: "00:24 - 00:32", Scene 5: "00:32 - 00:40", Scene 6: "00:40 - 00:48",
+      Scene 7: "00:48 - 00:56", Scene 8: "00:56 - 01:04", Scene 9: "01:04 - 01:12"
+    - Design the voiceoverText for each scene to be spoken naturally within 8 seconds (about 20-25 words max per scene).
+    ${cutsInstructions}
     Output strictly in JSON format.
     The 'scenes' array must have exactly 9 elements.
     Each scene needs:
     - id: Sequential number starting from 1.
     - timeRange: Must follow the 8-second intervals above.
-    - visualDescription: Multi-shot description with 2-3 [cut] tags for camera angle changes. Make it dynamic!
+    ${visualDescriptionHint}
     - audioDescription: SFX and atmosphere notes.
-    - cameraShot: The PRIMARY shot type (e.g. Wide Shot, Medium Shot, Close Up) - the scene will have multiple angles via [cut] tags.
+    - cameraShot: The PRIMARY shot type (e.g. Wide Shot, Medium Shot, Close Up).
     - voiceoverText: The exact spoken dialogue/narration for this specific 8-second segment (20-25 words max).
   `;
 
@@ -201,6 +215,7 @@ export const generateScript = async (
     return JSON.parse(text) as Script;
   } catch (error) {
     handleApiError(error, "Script generation");
+    throw error; // Unreachable - handleApiError always throws
   }
 };
 
@@ -276,6 +291,7 @@ export const generateStoryboard = async (script: Script, refImages?: string[], a
     throw new Error("No image generated in response");
   } catch (error) {
     handleApiError(error, "Storyboard generation");
+    throw error; // Unreachable - handleApiError always throws
   }
 };
 
@@ -313,8 +329,7 @@ export const generateVideoForScene = async (
         numberOfVideos: 1,
         resolution: '720p',
         aspectRatio: aspectRatio
-      },
-      safetySettings
+      }
     });
 
     while (!operation.done) {
@@ -342,10 +357,6 @@ export const generateVideoForScene = async (
     }
 
     const firstVideo = generatedVideos[0];
-    if (firstVideo.video?.state === 'FAILED') {
-      throw new Error(`Video generation failed: ${firstVideo.video.error?.message || 'Unknown error'}`);
-    }
-
     const videoUri = firstVideo.video?.uri;
     if (!videoUri) {
       console.error('[Veo] Video object missing URI:', JSON.stringify(firstVideo, null, 2));
@@ -361,6 +372,7 @@ export const generateVideoForScene = async (
     return URL.createObjectURL(blob);
   } catch (error) {
     handleApiError(error, `Video generation for scene ${scene.id}`);
+    throw error; // Unreachable - handleApiError always throws
   }
 };
 
@@ -403,6 +415,7 @@ export const generateMasterAudio = async (script: Script): Promise<string> => {
     return `data:${mimeType};base64,${audioPart.data}`;
   } catch (error) {
     handleApiError(error, "Voiceover generation");
+    throw error; // Unreachable - handleApiError always throws
   }
 };
 

@@ -9,9 +9,11 @@ interface InputFormProps {
   isLoading: boolean;
   aspectRatio: AspectRatio;
   onAspectRatioChange: (ratio: AspectRatio) => void;
+  enableCuts: boolean;
+  onEnableCutsChange: (enabled: boolean) => void;
 }
 
-const InputForm: React.FC<InputFormProps> = ({ onSubmit, isLoading, aspectRatio, onAspectRatioChange }) => {
+const InputForm: React.FC<InputFormProps> = ({ onSubmit, isLoading, aspectRatio, onAspectRatioChange, enableCuts, onEnableCutsChange }) => {
   const [prompt, setPrompt] = useState('');
   const [refVideo, setRefVideo] = useState<File | null>(null);
   const [refImages, setRefImages] = useState<File[]>([]);
@@ -168,6 +170,46 @@ const InputForm: React.FC<InputFormProps> = ({ onSubmit, isLoading, aspectRatio,
             </button>
           </div>
           <p className="text-xs text-neutral-500 mt-1">Affects storyboard grid and video generation.</p>
+        </div>
+
+        {/* Camera Cuts Toggle */}
+        <div>
+          <label className="block text-sm font-medium text-neutral-300 mb-2">
+            Multi-Shot Camera Cuts
+          </label>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => onEnableCutsChange(true)}
+              className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all flex items-center justify-center gap-2
+                ${enableCuts
+                  ? 'border-red-500 bg-red-900/30 text-white'
+                  : 'border-neutral-600 bg-neutral-800 text-neutral-400 hover:border-neutral-500'
+                }`}
+            >
+              <svg className={`w-5 h-5 ${enableCuts ? 'text-red-400' : 'text-neutral-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4V2m0 2v2m0-2H5m2 0h2m6 10v2m0-2v-2m0 2h-2m2 0h2M5 10h14M5 14h14M5 18h14" />
+              </svg>
+              <span className="font-semibold">Enable Cuts</span>
+              <span className="text-xs text-neutral-500">Dynamic</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onEnableCutsChange(false)}
+              className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all flex items-center justify-center gap-2
+                ${!enableCuts
+                  ? 'border-red-500 bg-red-900/30 text-white'
+                  : 'border-neutral-600 bg-neutral-800 text-neutral-400 hover:border-neutral-500'
+                }`}
+            >
+              <svg className={`w-5 h-5 ${!enableCuts ? 'text-red-400' : 'text-neutral-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              <span className="font-semibold">Single Shot</span>
+              <span className="text-xs text-neutral-500">Smooth</span>
+            </button>
+          </div>
+          <p className="text-xs text-neutral-500 mt-1">Enable for dynamic multi-angle videos, disable for smooth continuous animation.</p>
         </div>
 
         <button

@@ -37,6 +37,7 @@ export default function VideoStudio() {
     isGeneratingFullMovie: false,
     generatingVideoIds: [],
     aspectRatio: '16:9',
+    enableCuts: true,
   });
 
   useEffect(() => {
@@ -87,10 +88,14 @@ export default function VideoStudio() {
     setState(prev => ({ ...prev, aspectRatio: ratio }));
   };
 
+  const handleEnableCutsChange = (enabled: boolean) => {
+    setState(prev => ({ ...prev, enableCuts: enabled }));
+  };
+
   const handleInitialGenerate = async (prompt: string, refVideo?: string, refImages?: string[]) => {
     setState(prev => ({ ...prev, isGeneratingScript: true }));
     try {
-      const script = await generateScript(prompt, refVideo, refImages);
+      const script = await generateScript(prompt, refVideo, refImages, state.enableCuts);
       setState(prev => ({ ...prev, script, isGeneratingScript: false, isGeneratingStoryboard: true }));
       const storyboardUrl = await generateStoryboard(script, refImages, state.aspectRatio);
 
@@ -339,6 +344,8 @@ export default function VideoStudio() {
             isLoading={state.isGeneratingScript || state.isGeneratingStoryboard}
             aspectRatio={state.aspectRatio}
             onAspectRatioChange={handleAspectRatioChange}
+            enableCuts={state.enableCuts}
+            onEnableCutsChange={handleEnableCutsChange}
           />
         )}
 

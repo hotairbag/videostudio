@@ -10,6 +10,7 @@ AI-powered video production studio that generates ~1 minute cinematic videos fro
 - **Voiceover** - Gemini 2.5 TTS with natural narration
 - **Background Music** - Content-aware Suno music generation (matches scene mood)
 - **Aspect Ratios** - Support for both 16:9 (landscape) and 9:16 (portrait/vertical)
+- **Camera Cuts Toggle** - Enable dynamic multi-shot cuts or smooth single-shot animation
 - **Export** - High-quality WebM export with mixed audio tracks
 
 ## Tech Stack
@@ -53,8 +54,9 @@ Open [http://localhost:3000](http://localhost:3000)
 
 1. **Input** - Enter a video description and optionally upload reference images for style/character consistency
 2. **Select Aspect Ratio** - Choose 16:9 (landscape) or 9:16 (portrait)
-3. **Review Storyboard** - Preview the AI-generated 3x3 visual grid
-4. **Production** - Generate videos for each scene, preview, and export
+3. **Toggle Camera Cuts** - Enable for dynamic multi-angle shots, disable for smooth continuous animation
+4. **Review Storyboard** - Preview the AI-generated 3x3 visual grid
+5. **Production** - Generate videos for each scene, preview, and export
 
 ## Project Structure
 
@@ -94,7 +96,8 @@ npm test -- --coverage     # Coverage report
 ## Video Generation Details
 
 Each scene generates an 8-second video with:
-- **Multi-shot cuts** - 2-3 camera angle changes using `[cut]` tags
+- **Multi-shot cuts** (optional) - 2-3 camera angle changes using `[cut]` tags when enabled
+- **Single-shot mode** - Smooth continuous animation when cuts are disabled
 - **Ambient SFX** - Scene-appropriate sound effects (no dialogue/music)
 - **720p resolution** - Optimized for web playback
 

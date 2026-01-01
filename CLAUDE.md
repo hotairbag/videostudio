@@ -31,8 +31,8 @@ npm test         # Run Jest test suite (70 tests)
 INPUT → STORYBOARD → PRODUCTION → EXPORT
 ```
 
-1. **Input**: User provides prompt + optional reference images + aspect ratio selection
-2. **Script Generation**: Gemini 3 Pro creates structured 9-scene script with multi-shot `[cut]` tags
+1. **Input**: User provides prompt + optional reference images + aspect ratio + cuts toggle
+2. **Script Generation**: Gemini 3 Pro creates structured 9-scene script (with multi-shot `[cut]` tags if enabled)
 3. **Storyboard**: Gemini 3 Pro Image generates 3x3 grid (uses base scene descriptions, strips `[cut]` tags)
 4. **Grid Slicing**: Canvas API splits grid into 9 individual frames (respects aspect ratio)
 5. **Video Generation**: Veo 3.1 creates 8-second clips per scene with multi-shot cuts (batched 3 at a time)
@@ -85,6 +85,7 @@ interface AppState {
   masterAudioUrl: string | null;
   backgroundMusicUrl: string | null;
   aspectRatio: AspectRatio;      // Affects storyboard, frames, videos, export
+  enableCuts: boolean;           // Toggle for multi-shot [cut] tags in video generation
   // Loading flags...
 }
 ```
@@ -110,17 +111,19 @@ The app supports both 16:9 (landscape) and 9:16 (portrait) throughout the entire
 | Generated videos | 720p 16:9 | 720p 9:16 |
 | Export canvas | 1280x720 | 720x1280 |
 
-### Multi-Shot Video Generation
+### Multi-Shot Video Generation (Optional)
 
-Each scene's `visualDescription` includes `[cut]` tags for multiple camera angles within a single 8-second video:
+When **Enable Cuts** is toggled on, each scene's `visualDescription` includes `[cut]` tags for multiple camera angles within a single 8-second video:
 
 ```
 A chef prepares ingredients [cut] close up shot of hands chopping [cut] insert shot of sizzling pan
 ```
 
-**Important**: The storyboard generation strips `[cut]` tags (uses only base description), while Veo receives the full multi-shot prompt.
+When **Single Shot** is selected, scenes use continuous smooth camera movement without cuts - ideal for animation-style videos where precise cuts may not work well.
 
-Camera cut formulas:
+**Important**: The storyboard generation always strips `[cut]` tags (uses only base description), while Veo receives the full prompt.
+
+Camera cut formulas (when enabled):
 - `[cut] close up shot of [character] - he is [emotion]`
 - `[cut] over the shoulder shot - in front of [character] - [what they see]`
 - `[cut] insert shot of [item], [camera movement]`
@@ -143,7 +146,7 @@ The Suno music API (`src/app/api/music/generate/route.ts`) detects content type 
 ### Video Generation Details
 
 - Videos are 8 seconds, 720p, configurable aspect ratio
-- **Multi-shot cuts**: 2-3 camera angle changes per scene via `[cut]` tags
+- **Multi-shot cuts** (optional): 2-3 camera angle changes per scene via `[cut]` tags when enabled
 - **Audio in generated videos**: SFX only (ambient sounds matching scene atmosphere)
   - NO dialogue (voiceover is generated separately via Gemini TTS)
   - NO music (background music is generated separately via Suno)
