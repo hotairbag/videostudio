@@ -1,36 +1,109 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# GenDirector AI Video Studio
+
+AI-powered video production studio that generates ~1 minute cinematic videos from text prompts. Uses Google Gemini for script/storyboard generation, Veo 3.1 for video synthesis, and Suno for background music.
+
+## Features
+
+- **Script Generation** - Gemini 3 Pro creates structured 9-scene scripts with multi-shot camera directions
+- **Storyboard** - AI-generated 3x3 cinematic grid for visual planning
+- **Video Generation** - Veo 3.1 creates 8-second clips with multiple camera cuts per scene
+- **Voiceover** - Gemini 2.5 TTS with natural narration
+- **Background Music** - Content-aware Suno music generation (matches scene mood)
+- **Aspect Ratios** - Support for both 16:9 (landscape) and 9:16 (portrait/vertical)
+- **Export** - High-quality WebM export with mixed audio tracks
+
+## Tech Stack
+
+- **Framework**: Next.js 16 with App Router
+- **Styling**: Tailwind CSS v4
+- **AI Models**:
+  - Gemini 3 Pro (script generation)
+  - Gemini 3 Pro Image (storyboard)
+  - Veo 3.1 Fast (video generation)
+  - Gemini 2.5 Flash TTS (voiceover)
+  - Suno V5 via Kie.ai (background music)
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+
+- Google Cloud API key with access to Gemini and Veo models
+- Kie.ai API key for Suno music generation
+
+### Environment Variables
+
+Create a `.env.local` file:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+NEXT_PUBLIC_GOOGLE_API_KEY=your_google_api_key
+MUSIC_API_KEY=your_kieai_api_key
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Installation
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open [http://localhost:3000](http://localhost:3000)
 
-## Learn More
+## Usage
 
-To learn more about Next.js, take a look at the following resources:
+1. **Input** - Enter a video description and optionally upload reference images for style/character consistency
+2. **Select Aspect Ratio** - Choose 16:9 (landscape) or 9:16 (portrait)
+3. **Review Storyboard** - Preview the AI-generated 3x3 visual grid
+4. **Production** - Generate videos for each scene, preview, and export
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Project Structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/
+├── app/
+│   ├── page.tsx                 # Entry point
+│   └── api/music/generate/      # Suno music API route
+├── components/
+│   ├── VideoStudio.tsx          # Main orchestrator
+│   ├── InputForm.tsx            # User input & uploads
+│   ├── Storyboard.tsx           # 3x3 grid preview
+│   └── Production.tsx           # Scene grid & export
+├── services/
+│   ├── geminiService.ts         # Gemini/Veo API calls
+│   └── musicService.ts          # Suno API calls
+├── utils/
+│   ├── imageUtils.ts            # Grid slicing utilities
+│   └── videoCompositor.ts       # Video export composition
+├── types.ts                     # TypeScript interfaces
+└── __tests__/                   # Jest test suite
+```
 
-## Deploy on Vercel
+## Testing
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm test                    # Run all tests
+npm test -- --watch        # Watch mode
+npm test -- --coverage     # Coverage report
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Documentation
+
+- [Veo Prompt Guide](docs/veo-guide.md) - Multi-shot prompts, camera angles, visual styles
+- [Suno Music Guide](docs/suno-guide.md) - Content-aware music generation
+
+## Video Generation Details
+
+Each scene generates an 8-second video with:
+- **Multi-shot cuts** - 2-3 camera angle changes using `[cut]` tags
+- **Ambient SFX** - Scene-appropriate sound effects (no dialogue/music)
+- **720p resolution** - Optimized for web playback
+
+### Export Quality
+
+- Video: VP9 codec at 8 Mbps
+- Audio: Opus codec at 192 kbps
+- Format: WebM container
+
+## License
+
+MIT

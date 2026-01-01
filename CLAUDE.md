@@ -13,6 +13,7 @@ npm run dev      # Start development server (http://localhost:3000)
 npm run build    # Production build
 npm run start    # Start production server
 npm run lint     # Run ESLint
+npm test         # Run Jest test suite (70 tests)
 ```
 
 ## Architecture
@@ -21,6 +22,7 @@ npm run lint     # Run ESLint
 - **Framework**: Next.js 16 with App Router
 - **Styling**: Tailwind CSS v4
 - **AI Services**: Google GenAI SDK (`@google/genai`)
+- **Testing**: Jest + React Testing Library
 - **Import alias**: `@/*` maps to `src/*`
 
 ### Application Flow
@@ -29,13 +31,13 @@ npm run lint     # Run ESLint
 INPUT → STORYBOARD → PRODUCTION → EXPORT
 ```
 
-1. **Input**: User provides prompt + optional reference video/image
-2. **Script Generation**: Gemini 3 Pro creates structured 9-scene script
-3. **Storyboard**: Gemini 3 Pro Image generates 3x3 grid (2K, 16:9)
-4. **Grid Slicing**: Canvas API splits grid into 9 individual frames
-5. **Video Generation**: Veo 3.1 creates 8-second clips per scene (batched 3 at a time)
-6. **Audio**: Gemini 2.5 TTS generates voiceover; Suno creates background music
-7. **Composition**: Canvas + MediaRecorder exports final WebM
+1. **Input**: User provides prompt + optional reference images + aspect ratio selection
+2. **Script Generation**: Gemini 3 Pro creates structured 9-scene script with multi-shot `[cut]` tags
+3. **Storyboard**: Gemini 3 Pro Image generates 3x3 grid (uses base scene descriptions, strips `[cut]` tags)
+4. **Grid Slicing**: Canvas API splits grid into 9 individual frames (respects aspect ratio)
+5. **Video Generation**: Veo 3.1 creates 8-second clips per scene with multi-shot cuts (batched 3 at a time)
+6. **Audio**: Gemini 2.5 TTS generates voiceover; Suno creates content-aware background music
+7. **Composition**: Canvas + MediaRecorder exports final WebM (8 Mbps VP9, 192 kbps Opus)
 
 ### Key Files
 
@@ -44,16 +46,17 @@ src/
 ├── app/page.tsx                    # Entry point, renders VideoStudio
 ├── components/
 │   ├── VideoStudio.tsx             # Main orchestrator, state management
-│   ├── InputForm.tsx               # Step 1: User input & file uploads
+│   ├── InputForm.tsx               # Step 1: User input, file uploads, aspect ratio toggle
 │   ├── Storyboard.tsx              # Step 2: Review 3x3 grid
 │   └── Production.tsx              # Step 3: Scene grid, playback, export
 ├── services/
 │   ├── geminiService.ts            # Gemini API: script, storyboard, video, TTS
 │   └── musicService.ts             # Kie.ai/Suno API for background music
 ├── utils/
-│   ├── imageUtils.ts               # Grid slicing, file-to-base64
-│   └── videoCompositor.ts          # Canvas rendering, WebM export
-└── types.ts                        # Scene, Script, AppState interfaces
+│   ├── imageUtils.ts               # Grid slicing, file-to-base64, aspect ratio dimensions
+│   └── videoCompositor.ts          # Canvas rendering, WebM export with audio mixing
+├── types.ts                        # Scene, Script, AppState, AspectRatio interfaces
+└── __tests__/                      # Jest test suite (70 tests)
 ```
 
 ### AI Models Used
@@ -71,6 +74,8 @@ src/
 All state lives in `VideoStudio.tsx` using React useState. Key state shape:
 
 ```typescript
+type AspectRatio = "16:9" | "9:16";
+
 interface AppState {
   step: 'input' | 'storyboard' | 'production';
   script: Script | null;
@@ -79,6 +84,7 @@ interface AppState {
   generatedVideos: Record<number, string>;  // sceneId → blob URL
   masterAudioUrl: string | null;
   backgroundMusicUrl: string | null;
+  aspectRatio: AspectRatio;      // Affects storyboard, frames, videos, export
   // Loading flags...
 }
 ```
@@ -93,9 +99,51 @@ Users can enter the Google API key via:
 1. Google AI Studio's key selector (if available)
 2. Manual entry in the UI
 
+### Aspect Ratio Support
+
+The app supports both 16:9 (landscape) and 9:16 (portrait) throughout the entire pipeline:
+
+| Component | 16:9 Dimensions | 9:16 Dimensions |
+|-----------|-----------------|-----------------|
+| Storyboard grid | 16:9 overall | 9:16 overall |
+| Individual frames | 1280x720 | 720x1280 |
+| Generated videos | 720p 16:9 | 720p 9:16 |
+| Export canvas | 1280x720 | 720x1280 |
+
+### Multi-Shot Video Generation
+
+Each scene's `visualDescription` includes `[cut]` tags for multiple camera angles within a single 8-second video:
+
+```
+A chef prepares ingredients [cut] close up shot of hands chopping [cut] insert shot of sizzling pan
+```
+
+**Important**: The storyboard generation strips `[cut]` tags (uses only base description), while Veo receives the full multi-shot prompt.
+
+Camera cut formulas:
+- `[cut] close up shot of [character] - he is [emotion]`
+- `[cut] over the shoulder shot - in front of [character] - [what they see]`
+- `[cut] insert shot of [item], [camera movement]`
+- `[cut] aerial shot of [environment], view from above`
+- `[cut] low angle shot - [character + action]`
+
+### Content-Aware Music Generation
+
+The Suno music API (`src/app/api/music/generate/route.ts`) detects content type and generates appropriate music:
+
+| Content Type | Genre |
+|--------------|-------|
+| Casual/Food/BBQ | Indie Folk Pop |
+| Travel/Adventure | Indie Pop with World influences |
+| Sports/Fitness | Electronic Rock |
+| Nature/Wildlife | Ambient |
+| Epic/Cinematic | Orchestral Trailer |
+| Dark/Mystery | Dark Atmospheric |
+
 ### Video Generation Details
 
-- Videos are 8 seconds, 720p, 16:9
+- Videos are 8 seconds, 720p, configurable aspect ratio
+- **Multi-shot cuts**: 2-3 camera angle changes per scene via `[cut]` tags
 - **Audio in generated videos**: SFX only (ambient sounds matching scene atmosphere)
   - NO dialogue (voiceover is generated separately via Gemini TTS)
   - NO music (background music is generated separately via Suno)
@@ -105,11 +153,27 @@ Users can enter the Google API key via:
 ### Export Process
 
 `videoCompositor.ts` handles final composition:
-1. Creates 1280x720 canvas at 30 FPS
+1. Creates canvas at appropriate dimensions (1280x720 or 720x1280) at 30 FPS
 2. Loads all scene videos and audio tracks
 3. Uses Web Audio API to mix:
    - Video SFX (40% volume) - ambient sounds from each scene
    - Voiceover (100% volume) - Gemini TTS narration
    - Background music (20% volume) - Suno instrumental track
-4. MediaRecorder captures to WebM (VP9/Opus)
-5. Scene switching synchronized to voiceover duration
+4. MediaRecorder captures to WebM (VP9 8Mbps / Opus 192kbps)
+5. Scene switching synchronized to 8-second intervals
+
+### Testing
+
+Run the test suite:
+```bash
+npm test                    # Run all 70 tests
+npm test -- --watch        # Watch mode
+npm test -- --coverage     # Coverage report
+```
+
+Test files are in `src/__tests__/` mirroring the source structure.
+
+### Documentation
+
+- `docs/veo-guide.md` - Veo prompt reference with multi-shot `[cut]` formulas
+- `docs/suno-guide.md` - Suno music prompt reference with content-type mapping
