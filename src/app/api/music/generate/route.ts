@@ -261,15 +261,33 @@ export async function POST(request: NextRequest) {
     // Poll for completion using the correct endpoint
     const maxAttempts = 36; // 3 minutes total (36 * 5s)
     const delayMs = 5000;
+    const maxRetries = 3; // Retry transient network errors
 
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise(r => setTimeout(r, delayMs));
 
-      const statusRes = await fetch(`${BASE_URL}/generate/record-info?taskId=${taskId}`, {
-        headers: { 'Authorization': `Bearer ${apiKey}` }
-      });
+      // Retry logic for transient network errors
+      let statusRes: Response | null = null;
+      for (let retry = 0; retry < maxRetries; retry++) {
+        try {
+          statusRes = await fetch(`${BASE_URL}/generate/record-info?taskId=${taskId}`, {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+          });
+          break; // Success, exit retry loop
+        } catch (fetchError) {
+          console.warn(`[Suno] Poll attempt ${i + 1}, retry ${retry + 1}/${maxRetries} failed:`,
+            fetchError instanceof Error ? fetchError.message : 'Network error');
+          if (retry === maxRetries - 1) {
+            // Last retry failed, continue to next poll attempt
+            console.warn('[Suno] All retries failed, continuing to next poll...');
+          } else {
+            // Wait a bit before retrying
+            await new Promise(r => setTimeout(r, 2000));
+          }
+        }
+      }
 
-      if (statusRes.ok) {
+      if (statusRes?.ok) {
         const statusJson: MusicStatusResponse = await statusRes.json();
         const taskData = statusJson.data;
 
