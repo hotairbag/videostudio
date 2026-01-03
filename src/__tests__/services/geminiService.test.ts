@@ -435,6 +435,157 @@ describe('geminiService', () => {
       jest.useRealTimers();
     });
 
+    it('should use proxy for R2 URLs to avoid CORS', async () => {
+      setApiKey('test-key');
+
+      const { GoogleGenAI } = require('@google/genai');
+      const mockGenerateVideos = jest.fn().mockResolvedValue({
+        done: true,
+        response: {
+          generatedVideos: [
+            { video: { uri: 'https://example.com/video.mp4' } },
+          ],
+        },
+      });
+
+      GoogleGenAI.mockImplementation(() => ({
+        models: {
+          generateVideos: mockGenerateVideos,
+        },
+        operations: {
+          getVideosOperation: jest.fn(),
+        },
+      }));
+
+      // Mock fetch - first call is for image proxy, second for video download
+      const mockImageData = new Uint8Array([137, 80, 78, 71]); // PNG header
+      const mockVideoData = new Uint8Array([0, 0, 0, 0]);
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          blob: () => Promise.resolve({
+            type: 'image/png',
+            arrayBuffer: () => Promise.resolve(mockImageData.buffer),
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          blob: () => Promise.resolve({
+            type: 'video/mp4',
+            arrayBuffer: () => Promise.resolve(mockVideoData.buffer),
+          }),
+        });
+
+      const r2Url = 'https://video-studio.jarwater.com/frames/test.png';
+      const resultPromise = generateVideoForScene(mockScene, r2Url);
+
+      const result = await resultPromise;
+
+      // Verify that fetch was called with the proxy URL for R2 images
+      expect(global.fetch).toHaveBeenCalledWith(
+        `/api/proxy-image?url=${encodeURIComponent(r2Url)}`
+      );
+      expect(result).toBe('blob:mock-url');
+    });
+
+    it('should fetch non-R2 URLs directly without proxy', async () => {
+      setApiKey('test-key');
+
+      const { GoogleGenAI } = require('@google/genai');
+      const mockGenerateVideos = jest.fn().mockResolvedValue({
+        done: true,
+        response: {
+          generatedVideos: [
+            { video: { uri: 'https://example.com/video.mp4' } },
+          ],
+        },
+      });
+
+      GoogleGenAI.mockImplementation(() => ({
+        models: {
+          generateVideos: mockGenerateVideos,
+        },
+        operations: {
+          getVideosOperation: jest.fn(),
+        },
+      }));
+
+      const mockImageData = new Uint8Array([137, 80, 78, 71]);
+      const mockVideoData = new Uint8Array([0, 0, 0, 0]);
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          blob: () => Promise.resolve({
+            type: 'image/png',
+            arrayBuffer: () => Promise.resolve(mockImageData.buffer),
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          blob: () => Promise.resolve({
+            type: 'video/mp4',
+            arrayBuffer: () => Promise.resolve(mockVideoData.buffer),
+          }),
+        });
+
+      const externalUrl = 'https://other-domain.com/image.png';
+      const resultPromise = generateVideoForScene(mockScene, externalUrl);
+
+      const result = await resultPromise;
+
+      // Verify that fetch was called directly without proxy
+      expect(global.fetch).toHaveBeenCalledWith(externalUrl);
+      expect(result).toBe('blob:mock-url');
+    });
+
+    it('should handle base64 data URLs without fetching', async () => {
+      setApiKey('test-key');
+
+      const { GoogleGenAI } = require('@google/genai');
+      const mockGenerateVideos = jest.fn().mockResolvedValue({
+        done: true,
+        response: {
+          generatedVideos: [
+            { video: { uri: 'https://example.com/video.mp4' } },
+          ],
+        },
+      });
+
+      GoogleGenAI.mockImplementation(() => ({
+        models: {
+          generateVideos: mockGenerateVideos,
+        },
+        operations: {
+          getVideosOperation: jest.fn(),
+        },
+      }));
+
+      const mockVideoData = new Uint8Array([0, 0, 0, 0]);
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        blob: () => Promise.resolve({
+          type: 'video/mp4',
+          arrayBuffer: () => Promise.resolve(mockVideoData.buffer),
+        }),
+      });
+
+      const base64Data = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      const resultPromise = generateVideoForScene(mockScene, base64Data);
+
+      const result = await resultPromise;
+
+      // Verify generateVideos was called with stripped base64 (no data URL prefix)
+      expect(mockGenerateVideos).toHaveBeenCalledWith(
+        expect.objectContaining({
+          image: expect.objectContaining({
+            imageBytes: expect.not.stringContaining('data:'),
+            mimeType: 'image/png',
+          }),
+        })
+      );
+      expect(result).toBe('blob:mock-url');
+    });
+
     it('should poll until video is ready', async () => {
       setApiKey('test-key');
 
