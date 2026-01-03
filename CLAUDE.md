@@ -204,12 +204,18 @@ The Suno music API (`src/app/api/music/generate/route.ts`) detects content type 
 
 Run the test suite:
 ```bash
-npm test                    # Run all 70 tests
+npm test                    # Run all tests
 npm test -- --watch        # Watch mode
 npm test -- --coverage     # Coverage report
 ```
 
-Test files are in `src/__tests__/` mirroring the source structure.
+Test files are in a top-level `tests/` folder:
+```
+tests/
+├── components/    # React component tests
+├── services/      # Service layer tests
+└── utils/         # Utility function tests
+```
 
 ### Testing Requirements
 
@@ -222,9 +228,9 @@ All new features and bug fixes MUST include tests:
 4. **Component Changes**: UI changes that affect behavior need component tests
 
 #### Test Locations
-- Frontend components: `src/__tests__/components/`
-- Services: `src/__tests__/services/`
-- Utils: `src/__tests__/utils/`
+- Frontend components: `tests/components/`
+- Services: `tests/services/`
+- Utils: `tests/utils/`
 - Convex functions: `convex/__tests__/`
 
 #### Running Tests
