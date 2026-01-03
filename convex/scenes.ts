@@ -38,6 +38,34 @@ export const createScript = mutation({
 
     const now = Date.now();
 
+    // Delete existing scripts and scenes for this project (clean slate on regenerate)
+    const existingScripts = await ctx.db
+      .query("scripts")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+
+    for (const existingScript of existingScripts) {
+      // Delete scenes for this script
+      const existingScenes = await ctx.db
+        .query("scenes")
+        .withIndex("by_script", (q) => q.eq("scriptId", existingScript._id))
+        .collect();
+      for (const scene of existingScenes) {
+        await ctx.db.delete(scene._id);
+      }
+      // Delete the script
+      await ctx.db.delete(existingScript._id);
+    }
+
+    // Also delete any orphaned scenes for this project (safety cleanup)
+    const orphanedScenes = await ctx.db
+      .query("scenes")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+    for (const scene of orphanedScenes) {
+      await ctx.db.delete(scene._id);
+    }
+
     // Create script
     const scriptId = await ctx.db.insert("scripts", {
       projectId: args.projectId,
@@ -125,5 +153,50 @@ export const getScenesByScript = query({
       .collect();
 
     return scenes.sort((a, b) => a.sceneNumber - b.sceneNumber);
+  },
+});
+
+// Cleanup mutation to remove duplicate scenes from a project
+// Keeps only the most recent scene for each sceneNumber
+export const cleanupDuplicateScenes = mutation({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, { projectId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Unauthorized");
+
+    const project = await ctx.db.get(projectId);
+    if (!project || project.userId !== userId) {
+      throw new Error("Project not found");
+    }
+
+    // Get all scenes for this project
+    const allScenes = await ctx.db
+      .query("scenes")
+      .withIndex("by_project", (q) => q.eq("projectId", projectId))
+      .collect();
+
+    // Group by sceneNumber
+    const scenesByNumber = new Map<number, typeof allScenes>();
+    for (const scene of allScenes) {
+      const existing = scenesByNumber.get(scene.sceneNumber) || [];
+      existing.push(scene);
+      scenesByNumber.set(scene.sceneNumber, existing);
+    }
+
+    // For each sceneNumber, keep the most recent (by createdAt), delete the rest
+    let deletedCount = 0;
+    for (const [sceneNumber, scenes] of scenesByNumber) {
+      if (scenes.length > 1) {
+        // Sort by createdAt descending, keep the first (newest)
+        scenes.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        const toDelete = scenes.slice(1); // All except the newest
+        for (const scene of toDelete) {
+          await ctx.db.delete(scene._id);
+          deletedCount++;
+        }
+      }
+    }
+
+    return { deletedCount, remainingScenes: allScenes.length - deletedCount };
   },
 });
