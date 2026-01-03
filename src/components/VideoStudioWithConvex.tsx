@@ -787,6 +787,9 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
             isGeneratingFullMovie={isGeneratingFullMovie}
             onGenerateVideo={handleGenerateVideo}
             onGenerateFullMovie={handleGenerateFullMovie}
+            onBackToStoryboard={async () => {
+              await updateProjectStatus({ projectId, status: 'storyboarding' });
+            }}
             aspectRatio={project.aspectRatio as AspectRatio}
             videoModel={project.videoModel as VideoModel}
             voiceMode={project.voiceMode as VoiceMode}

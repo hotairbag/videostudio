@@ -16,6 +16,7 @@ interface ProductionProps {
   isGeneratingFullMovie: boolean;
   onGenerateVideo: (sceneId: number) => void;
   onGenerateFullMovie: () => void;
+  onBackToStoryboard?: () => void;
   aspectRatio: AspectRatio;
   videoModel: VideoModel;
   voiceMode: VoiceMode;
@@ -265,6 +266,7 @@ const Production: React.FC<ProductionProps> = ({
   isGeneratingFullMovie,
   onGenerateVideo,
   onGenerateFullMovie,
+  onBackToStoryboard,
   aspectRatio,
   videoModel,
   voiceMode
@@ -353,11 +355,24 @@ const Production: React.FC<ProductionProps> = ({
       <div className="bg-gradient-to-r from-neutral-800 to-neutral-900 p-6 rounded-xl border border-neutral-700 flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-red-600/10 blur-3xl rounded-full -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
 
-        <div className="z-10">
-          <h2 className="text-2xl font-bold text-white mb-1">{script.title || "Untitled Project"}</h2>
-          <div className="flex items-center gap-2 text-sm text-neutral-400">
-            <span className="bg-neutral-800 px-2 py-0.5 rounded border border-neutral-700">{script.style}</span>
-            <span>• {totalScenes} Scenes</span>
+        <div className="z-10 flex items-center gap-4">
+          {onBackToStoryboard && (
+            <button
+              onClick={onBackToStoryboard}
+              className="p-2 rounded-lg border border-neutral-600 text-neutral-400 hover:text-white hover:border-neutral-500 hover:bg-neutral-800 transition-all"
+              title="Back to Storyboard"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+            </button>
+          )}
+          <div>
+            <h2 className="text-2xl font-bold text-white mb-1">{script.title || "Untitled Project"}</h2>
+            <div className="flex items-center gap-2 text-sm text-neutral-400">
+              <span className="bg-neutral-800 px-2 py-0.5 rounded border border-neutral-700">{script.style}</span>
+              <span>• {totalScenes} Scenes</span>
+            </div>
           </div>
         </div>
 
