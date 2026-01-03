@@ -46,7 +46,9 @@ function buildSunoPrompt(title: string, style: string, theme?: string): string {
   // Analyze the content to determine appropriate musical direction
   const contentLower = (theme || '').toLowerCase() + ' ' + (title || '').toLowerCase() + ' ' + (style || '').toLowerCase();
 
-  // Detect scene type - PRIORITY ORDER MATTERS (check casual/everyday scenes FIRST)
+  // Detect scene type - PRIORITY ORDER MATTERS (check specific genres FIRST)
+  const isAnimeAction = /anime.*(action|battle|fight|combat|warrior|sword|power)|action.*anime|shonen|shounen/i.test(contentLower);
+  const isAnimeDrama = /anime.*(drama|romance|emotion|school|slice)/i.test(contentLower) && !isAnimeAction;
   const isCasual = /bbq|barbecue|backyard|cooking|kitchen|food|eating|meal|dinner|lunch|breakfast|party|picnic|garden|outdoor|grill|chef|recipe|vlog|tutorial|how.?to|diy|home|house|family|friend/i.test(contentLower);
   const isTravel = /travel|vacation|holiday|trip|journey|explore|tourist|beach|resort|hotel|cruise|flight|road.?trip/i.test(contentLower);
   const isLifestyle = /lifestyle|fashion|beauty|makeup|shopping|retail|product|review|unboxing|haul/i.test(contentLower);
@@ -56,7 +58,7 @@ function buildSunoPrompt(title: string, style: string, theme?: string): string {
   const isDark = /dark|night|shadow|mystery|tension|suspense|horror|fear|thriller|crime|noir/i.test(contentLower);
   const isUplifting = /happy|joy|celebration|hope|bright|success|victory|wedding|birthday|achievement/i.test(contentLower);
   const isEmotional = /sad|melancholy|loss|memory|nostalgia|longing|farewell|goodbye|emotional|dramatic/i.test(contentLower);
-  const isAction = /action|chase|fast|speed|energy|dynamic|intense|rush|extreme|stunt/i.test(contentLower);
+  const isAction = /action|chase|fast|speed|energy|dynamic|intense|rush|extreme|stunt|fight|combat|battle/i.test(contentLower);
   const isSerene = /calm|peace|serene|gentle|soft|quiet|meditation|yoga|spa|relax|mindful/i.test(contentLower);
   const isExotic = /arab|middle.?east|india|asia|japan|china|africa|latin|tribal|ethnic|desert|oasis/i.test(contentLower);
   const isModern = /urban|city|tech|future|cyber|digital|neon|synth|corporate|business|startup/i.test(contentLower);
@@ -68,7 +70,19 @@ function buildSunoPrompt(title: string, style: string, theme?: string): string {
   let production: string;
   let mood: string;
 
-  if (isCasual) {
+  if (isAnimeAction) {
+    // Anime action/battle - epic orchestral with J-rock influences
+    genre = 'epic orchestral rock with Japanese anime soundtrack influences and intense battle energy';
+    instrumentation = 'electric guitar riffs and orchestral strings and taiko drums and brass and choir with synth layers';
+    production = 'massive cinematic mix and powerful low end and dramatic dynamics with epic builds';
+    mood = 'intense and heroic and epic battle energy';
+  } else if (isAnimeDrama) {
+    // Anime drama/romance - emotional J-pop influenced
+    genre = 'emotional J-pop ballad with orchestral elements and heartfelt melodies';
+    instrumentation = 'piano and strings and acoustic guitar and soft synths with emotional builds';
+    production = 'intimate yet cinematic mix and emotional dynamics and warm reverb';
+    mood = 'emotional and heartfelt and bittersweet';
+  } else if (isCasual) {
     // Casual/everyday content - light, upbeat, acoustic-friendly
     genre = 'indie folk pop with acoustic elements and feel-good vibes';
     instrumentation = 'acoustic guitar and light percussion and bass and subtle keys with hand claps';
@@ -173,7 +187,14 @@ function buildSunoStyle(title: string, style: string, theme?: string): string {
   // Determine style based on content type - priority order matters
   let styleParts: string[];
 
-  if (/bbq|barbecue|backyard|cooking|kitchen|food|eating|meal|party|picnic|grill|vlog|tutorial|diy|home|family/i.test(contentLower)) {
+  const isAnimeAction = /anime.*(action|battle|fight|combat|warrior|sword|power)|action.*anime|shonen|shounen/i.test(contentLower);
+  const isAnimeDrama = /anime.*(drama|romance|emotion|school|slice)/i.test(contentLower) && !isAnimeAction;
+
+  if (isAnimeAction) {
+    styleParts = ['Epic', 'Orchestral Rock', 'Anime OST', 'Battle', 'Intense', 'Instrumental'];
+  } else if (isAnimeDrama) {
+    styleParts = ['Emotional', 'J-Pop Ballad', 'Anime OST', 'Heartfelt', 'Instrumental'];
+  } else if (/bbq|barbecue|backyard|cooking|kitchen|food|eating|meal|party|picnic|grill|vlog|tutorial|diy|home|family/i.test(contentLower)) {
     styleParts = ['Indie Folk', 'Acoustic', 'Feel-Good', 'Upbeat', 'Instrumental'];
   } else if (/travel|vacation|holiday|trip|journey|explore|tourist|beach/i.test(contentLower)) {
     styleParts = ['Indie Pop', 'Adventure', 'Uplifting', 'World', 'Instrumental'];
