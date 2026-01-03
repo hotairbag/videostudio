@@ -634,6 +634,7 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
                 onRegenerate={handleRegenerateStoryboard1}
                 onConfirm={handleConfirmStoryboard}
                 isLoading={isGeneratingStoryboard1}
+                isConfirming={isConfirming}
               />
             )}
 
