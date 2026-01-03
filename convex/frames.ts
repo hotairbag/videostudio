@@ -27,6 +27,16 @@ export const createMany = mutation({
       throw new Error("Project not found");
     }
 
+    // Delete any existing frames for this project (prevents duplicates from double-clicks)
+    const existingFrames = await ctx.db
+      .query("frames")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+
+    for (const frame of existingFrames) {
+      await ctx.db.delete(frame._id);
+    }
+
     const now = Date.now();
     const frameIds: string[] = [];
 
