@@ -1,0 +1,43 @@
+diff --git a/node_modules/@convex-dev/auth/dist/server/utils.js b/node_modules/@convex-dev/auth/dist/server/utils.js
+index bb05c09..84249bc 100644
+--- a/node_modules/@convex-dev/auth/dist/server/utils.js
++++ b/node_modules/@convex-dev/auth/dist/server/utils.js
+@@ -1,5 +1,13 @@
++// Pre-read env vars with dot notation to work around Convex component isolation
++const ENV_CACHE = {
++    JWT_PRIVATE_KEY: process.env.JWT_PRIVATE_KEY,
++    JWKS: process.env.JWKS,
++    SITE_URL: process.env.SITE_URL,
++    CONVEX_SITE_URL: process.env.CONVEX_SITE_URL,
++    AUTH_SECRET: process.env.AUTH_SECRET,
++};
+ export function requireEnv(name) {
+-    const value = process.env[name];
++    const value = ENV_CACHE[name] ?? process.env[name];
+     if (value === undefined) {
+         throw new Error(`Missing environment variable \`${name}\``);
+     }
+diff --git a/node_modules/@convex-dev/auth/src/server/utils.ts b/node_modules/@convex-dev/auth/src/server/utils.ts
+index eb67bf0..3ee99e6 100644
+--- a/node_modules/@convex-dev/auth/src/server/utils.ts
++++ b/node_modules/@convex-dev/auth/src/server/utils.ts
+@@ -1,5 +1,18 @@
++// Lazy env var access using dot notation to work around Convex component isolation
++// The key insight: we must use STATIC dot notation, not dynamic bracket access
++function getEnvVar(name: string): string | undefined {
++  switch (name) {
++    case "JWT_PRIVATE_KEY": return process.env.JWT_PRIVATE_KEY;
++    case "JWKS": return process.env.JWKS;
++    case "SITE_URL": return process.env.SITE_URL;
++    case "CONVEX_SITE_URL": return process.env.CONVEX_SITE_URL;
++    case "AUTH_SECRET": return process.env.AUTH_SECRET;
++    default: return process.env[name];
++  }
++}
++
+ export function requireEnv(name: string) {
+-  const value = process.env[name];
++  const value = getEnvVar(name);
+   if (value === undefined) {
+     throw new Error(`Missing environment variable \`${name}\``);
+   }

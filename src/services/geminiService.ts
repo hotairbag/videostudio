@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Modality, HarmCategory, HarmBlockThreshold, SafetySetting } from "@google/genai";
-import { Scene, Script, AspectRatio } from "@/types";
+import { Scene, Script, AspectRatio, VideoModel, SeedanceResolution, VoiceMode, Character, DialogueLine, GeminiVoice, GEMINI_VOICES } from "@/types";
 
 declare global {
   interface Window {
@@ -79,7 +79,12 @@ export const generateScript = async (
   prompt: string,
   referenceVideoBase64?: string,
   referenceImagesBase64?: string[],
-  enableCuts: boolean = true
+  enableCuts: boolean = true,
+  videoModel: VideoModel = 'veo-3.1',
+  seedanceSceneCount: 9 | 15 = 15,
+  multiCharacter: boolean = false,
+  voiceMode: VoiceMode = 'tts',
+  characterNames: string[] = []
 ): Promise<Script> => {
   const ai = getClient();
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
@@ -111,58 +116,190 @@ export const generateScript = async (
     });
   }
 
-  // Build system instruction conditionally based on enableCuts
-  const cutsInstructions = enableCuts ? `
+  // Seedance mode: configurable scenes (9 or 15) × 4 seconds
+  // Veo mode: 9 scenes × 8 seconds = 72 seconds
+  const isSeedance = videoModel === 'seedance-1.5';
+  const sceneCount = isSeedance ? seedanceSceneCount : 9;
+  const sceneDuration = isSeedance ? 4 : 8;
+  const wordsPerScene = isSeedance ? 10 : 22; // ~10 words for 4s, ~22 words for 8s
+
+  // Build time ranges
+  const timeRanges = Array.from({ length: sceneCount }, (_, i) => {
+    const start = i * sceneDuration;
+    const end = start + sceneDuration;
+    const formatTime = (s: number) => {
+      const mins = Math.floor(s / 60);
+      const secs = s % 60;
+      return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
+    return `"${formatTime(start)} - ${formatTime(end)}"`;
+  });
+
+  // Build system instruction conditionally based on enableCuts and videoModel
+  // CRITICAL: The start frame constraint - cuts can only show what's in the base description
+  const startFrameConstraint = `
+    CRITICAL START FRAME CONSTRAINT:
+    The BASE description (text BEFORE any [cut] tags) becomes the storyboard image/start frame.
+    The video generator ONLY knows what is visible in this starting image.
+
+    RULE: [cut] tags can ONLY show things that are PRESENT in the base description.
+    - If a character's FACE is NOT visible in the base description, you CANNOT cut to that character's face
+    - If showing a hand on a doorknob (no face), you CANNOT [cut] to the character's face - it would be a random stranger
+    - To show a character's face in a cut, their face MUST be visible in the base description
+
+    SAFE cuts when character face is NOT in base description:
+    - Insert shots of objects/items being interacted with
+    - Close-ups of hands performing actions
+    - Environment/scenery shots
+    - Detail shots of props in the scene
+
+    WRONG: "A hand reaches for the doorknob [cut] close up of John's determined face" (John's face not in start frame!)
+    CORRECT: "John stands at the door, his hand on the doorknob [cut] close up of John's determined face" (face visible)
+    CORRECT: "A hand reaches for the doorknob [cut] insert shot of the brass doorknob turning" (no face needed)
+  `;
+
+  let cutsInstructions: string;
+  if (isSeedance) {
+    // Seedance: shorter clips, so 1 cut max or single shot
+    cutsInstructions = enableCuts ? `
+    CAMERA CUTS (SEEDANCE MODE - 4 SECOND CLIPS):
+    Since each clip is only 4 seconds, use at most 1 camera cut per scene for dynamic effect.
+    Use the [cut] tag sparingly - focus on one key angle change.
+    ${startFrameConstraint}
+    Example: "Wide shot of a sunset [cut] close up of waves crashing"
+    ` : `
+    SINGLE-SHOT SCENES (SEEDANCE MODE):
+    Each 4-second scene should be a SINGLE continuous shot with smooth camera movement.
+    Describe camera movements like "camera slowly pans right", "camera tracks forward", etc.
+    Do NOT use [cut] tags.
+    `;
+  } else {
+    // Veo: 8 second clips, can have 2-3 cuts
+    cutsInstructions = enableCuts ? `
     MULTI-SHOT SCENES WITH CUTS:
     Each scene's visualDescription MUST include 2-3 camera cuts using the [cut] tag to create dynamic, professional videos.
     Start with a base shot description, then add [cut] tags for different angles.
+    ${startFrameConstraint}
 
-    Camera cut formulas to use:
-    - [cut] close up shot of [character/object] - shows emotion or detail
+    Camera cut formulas to use (ONLY use face cuts if face is in base description!):
+    - [cut] close up shot of [character] - shows emotion (ONLY if their face is in base description!)
     - [cut] over the shoulder shot - in front of the [character] - [what they're looking at]
     - [cut] insert shot of [item/detail], [camera movement like "camera moving right"]
     - [cut] aerial shot of [environment], view from above
     - [cut] low angle shot - [character + action]
     - [cut] front shot: [scene description]
     - [cut] shot from behind: [scene description]
-    - [cut] dutch shot of [character + action] - for dynamic/tense moments
 
-    Example visualDescription with cuts:
-    "A chef prepares ingredients in a kitchen [cut] close up shot of hands chopping vegetables [cut] insert shot of sizzling pan, camera moving left [cut] over the shoulder shot - in front of the chef - the finished dish"
-  ` : `
+    Example (character face in base):
+    "A chef stands at the counter preparing ingredients [cut] close up of the chef's focused expression [cut] insert shot of sizzling pan"
+
+    Example (NO character face in base):
+    "Hands carefully arrange flowers in a vase [cut] insert shot of colorful petals [cut] wide shot of the completed arrangement"
+    ` : `
     SINGLE-SHOT SCENES:
     Each scene's visualDescription should describe a SINGLE continuous shot with smooth camera movement.
     Focus on fluid motion and animation within a single camera perspective.
     Do NOT use [cut] tags - keep each scene as one uninterrupted take.
     Describe camera movements like "camera slowly pans right", "camera dollies forward", etc.
-  `;
+    `;
+  }
 
   const visualDescriptionHint = enableCuts
-    ? '- visualDescription: Multi-shot description with 2-3 [cut] tags for camera angle changes. Make it dynamic!'
+    ? (isSeedance
+        ? '- visualDescription: Short description with at most 1 [cut] tag for quick angle changes.'
+        : '- visualDescription: Multi-shot description with 2-3 [cut] tags for camera angle changes. Make it dynamic!')
     : '- visualDescription: Single continuous shot with smooth camera movement. No cuts.';
+
+  // Voice mode instructions
+  const allVoices = [...GEMINI_VOICES.female, ...GEMINI_VOICES.male];
+  const voiceListFemale = GEMINI_VOICES.female.join(', ');
+  const voiceListMale = GEMINI_VOICES.male.join(', ');
+
+  let voiceInstructions: string;
+  let voiceSchemaHint: string;
+
+  // Character names hint from reference images
+  const characterNamesHint = characterNames.length > 0
+    ? `\n    - The user has provided reference images for these characters: ${characterNames.join(', ')}. Use these exact names for the characters in the story.`
+    : '';
+
+  if (multiCharacter) {
+    // Multi-character dialogue mode
+    voiceInstructions = `
+    MULTI-CHARACTER DIALOGUE MODE:
+    - Identify ALL speaking characters in the story (minimum 1, maximum 5 characters).${characterNamesHint}
+    - For each character, select a unique voice from the available voices.
+    - Available female voices: ${voiceListFemale}
+    - Available male voices: ${voiceListMale}
+    - Each character needs: id (unique string), name (display name), gender (male/female/neutral), voiceName (from available voices), voiceProfile (short 5-10 word description of their voice personality for consistent synthesis, e.g., "warm and gentle father figure" or "energetic young woman").
+    - For each scene's dialogue, use an array of {speaker: "CharacterName", text: "what they say"} objects.
+    - If there's narration (not spoken by a character), use speaker: "narrator".
+    - The voiceoverText field should be the combined dialogue text for timing reference.
+    ${voiceMode === 'speech_in_video' ? `
+    SPEECH IN VIDEO MODE:
+    - The voiceProfile will be sent to the video generation model so characters have consistent voices.
+    - Keep voiceProfiles concise but distinctive.
+    ` : ''}
+    `;
+    voiceSchemaHint = `
+    - characters: Array of {id, name, gender, voiceName, voiceProfile} for each speaking character.
+    - For each scene's dialogue: Array of {speaker, text} pairs representing who says what in order.`;
+  } else {
+    // Single narrator voice mode - AI picks based on content
+    voiceInstructions = `
+    NARRATOR VOICE SELECTION:
+    - Select ONE narrator voice that best fits the story's tone and content.
+    - Available female voices: ${voiceListFemale}
+    - Available male voices: ${voiceListMale}
+    - Consider the story's mood (dramatic, cheerful, mysterious, romantic, etc.) when selecting.
+    - For romantic/emotional content: consider softer voices like Aoede, Kore, Leda (female) or Achird, Enceladus (male).
+    - For energetic/upbeat content: consider Zephyr, Despina (female) or Puck, Orus (male).
+    - For dramatic/cinematic content: consider Gacrux, Sulafat (female) or Fenrir, Rasalgethi, Schedar (male).
+    - For narration/documentary style: consider Vindemiatrix, Achernar (female) or Algenib, Algieba, Charon (male).
+    `;
+    voiceSchemaHint = `
+    - narratorVoice: The selected voice name for the narrator (must be from the available voices list).`;
+  }
+
+  const gridDescription = isSeedance
+    ? (sceneCount === 15
+        ? 'The first 9 scenes will be a 3x3 storyboard grid, and scenes 10-15 will be a 3x2 grid (6 panels).'
+        : 'All 9 scenes will be a single 3x3 storyboard grid.')
+    : 'We will be generating a 3x3 storyboard grid.';
+
+  // Critical narrative instruction: ending/logo/conclusion ONLY on the final scene
+  const narrativeEndingInstruction = `
+    CRITICAL NARRATIVE STRUCTURE:
+    - The story conclusion, ending, logo reveal, call-to-action, or final message MUST ONLY appear in the LAST scene (Scene ${sceneCount}).
+    - Scenes 1 through ${sceneCount - 1} should build the narrative - they should NOT contain any ending elements.
+    - Do NOT put logos, brand reveals, "The End", or concluding visuals in any scene except the final one.
+    - Scene ${sceneCount} is the ONLY scene that should wrap up the story.
+  `;
 
   const systemInstruction = `
     You are an expert film director and scriptwriter.
-    Your goal is to create a production script for a ~72 second video (9 scenes × 8 seconds each).
-    The script MUST be broken down into exactly 9 key scenes, as we will be generating a 3x3 storyboard grid.
+    Your goal is to create a production script for a ~${sceneCount * sceneDuration} second video (${sceneCount} scenes × ${sceneDuration} seconds each).
+    The script MUST be broken down into exactly ${sceneCount} key scenes. ${gridDescription}
+    ${narrativeEndingInstruction}
 
     CRITICAL TIMING REQUIREMENT:
-    - Each scene is EXACTLY 8 seconds long (this is fixed by the video generation model).
-    - The timeRange for each scene MUST reflect 8-second intervals:
-      Scene 1: "00:00 - 00:08", Scene 2: "00:08 - 00:16", Scene 3: "00:16 - 00:24",
-      Scene 4: "00:24 - 00:32", Scene 5: "00:32 - 00:40", Scene 6: "00:40 - 00:48",
-      Scene 7: "00:48 - 00:56", Scene 8: "00:56 - 01:04", Scene 9: "01:04 - 01:12"
-    - Design the voiceoverText for each scene to be spoken naturally within 8 seconds (about 20-25 words max per scene).
+    - Each scene is EXACTLY ${sceneDuration} seconds long (this is fixed by the video generation model).
+    - The timeRange for each scene MUST reflect ${sceneDuration}-second intervals:
+      ${timeRanges.slice(0, Math.min(5, sceneCount)).map((t, i) => `Scene ${i + 1}: ${t}`).join(', ')}${sceneCount > 5 ? `, ... Scene ${sceneCount}: ${timeRanges[sceneCount - 1]}` : ''}
+    - Design the voiceoverText for each scene to be spoken naturally within ${sceneDuration} seconds (about ${wordsPerScene} words max per scene).
     ${cutsInstructions}
+    ${voiceInstructions}
     Output strictly in JSON format.
-    The 'scenes' array must have exactly 9 elements.
+    The 'scenes' array must have exactly ${sceneCount} elements.
+    ${voiceSchemaHint}
     Each scene needs:
     - id: Sequential number starting from 1.
-    - timeRange: Must follow the 8-second intervals above.
+    - timeRange: Must follow the ${sceneDuration}-second intervals above.
     ${visualDescriptionHint}
     - audioDescription: SFX and atmosphere notes.
     - cameraShot: The PRIMARY shot type (e.g. Wide Shot, Medium Shot, Close Up).
-    - voiceoverText: The exact spoken dialogue/narration for this specific 8-second segment (20-25 words max).
+    - voiceoverText: The exact spoken dialogue/narration for this specific ${sceneDuration}-second segment (${wordsPerScene} words max).
+    ${multiCharacter ? '- dialogue: Array of {speaker, text} pairs for who says what in this scene.' : ''}
   `;
 
   const userPrompt = `
@@ -171,12 +308,73 @@ export const generateScript = async (
     If a reference video was provided, replicate its style, tone, and structure but adapted to the user's prompt.
     If no prompt is detailed, use the reference video as the ground truth.
 
-    Ensure the script has a cohesive narrative arc.
+    Ensure the script has a cohesive narrative arc across all ${sceneCount} scenes.
   `;
 
   parts.push({ text: userPrompt });
 
   try {
+    // Build scene schema based on mode
+    const sceneProperties: Record<string, { type: Type }> = {
+      id: { type: Type.INTEGER },
+      timeRange: { type: Type.STRING },
+      visualDescription: { type: Type.STRING },
+      audioDescription: { type: Type.STRING },
+      cameraShot: { type: Type.STRING },
+      voiceoverText: { type: Type.STRING },
+    };
+
+    // Add dialogue field for multi-character mode
+    if (multiCharacter) {
+      (sceneProperties as Record<string, unknown>).dialogue = {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            speaker: { type: Type.STRING },
+            text: { type: Type.STRING },
+          },
+          required: ["speaker", "text"],
+        },
+      };
+    }
+
+    // Build root schema properties
+    const rootProperties: Record<string, unknown> = {
+      title: { type: Type.STRING },
+      style: { type: Type.STRING },
+      scenes: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: sceneProperties,
+          required: multiCharacter
+            ? ["id", "visualDescription", "voiceoverText", "cameraShot", "dialogue"]
+            : ["id", "visualDescription", "voiceoverText", "cameraShot"],
+        },
+      },
+    };
+
+    // Add narratorVoice for single-voice mode, characters for multi-character
+    if (multiCharacter) {
+      rootProperties.characters = {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            id: { type: Type.STRING },
+            name: { type: Type.STRING },
+            gender: { type: Type.STRING },
+            voiceName: { type: Type.STRING },
+            voiceProfile: { type: Type.STRING },
+          },
+          required: ["id", "name", "gender", "voiceName"],
+        },
+      };
+    } else {
+      rootProperties.narratorVoice = { type: Type.STRING };
+    }
+
     const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: { parts },
@@ -186,26 +384,8 @@ export const generateScript = async (
         safetySettings,
         responseSchema: {
           type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING },
-            style: { type: Type.STRING },
-            scenes: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.INTEGER },
-                  timeRange: { type: Type.STRING },
-                  visualDescription: { type: Type.STRING },
-                  audioDescription: { type: Type.STRING },
-                  cameraShot: { type: Type.STRING },
-                  voiceoverText: { type: Type.STRING },
-                },
-                required: ["id", "visualDescription", "voiceoverText", "cameraShot"],
-              },
-            },
-          },
-          required: ["title", "scenes"],
+          properties: rootProperties,
+          required: multiCharacter ? ["title", "scenes", "characters"] : ["title", "scenes", "narratorVoice"],
         },
       },
     });
@@ -219,43 +399,68 @@ export const generateScript = async (
   }
 };
 
-export const generateStoryboard = async (script: Script, refImages?: string[], aspectRatio: AspectRatio = '16:9'): Promise<string> => {
+export const generateStoryboard = async (script: Script, refImages?: string[], aspectRatio: AspectRatio = '16:9', totalScenes: number = 9): Promise<string> => {
   const ai = getClient();
+
+  // For 15-scene mode, first grid only shows scenes 1-9
+  const scenesToShow = script.scenes.slice(0, 9);
 
   // Strip [cut] tags from visualDescription for storyboard - cuts are only for Veo video generation
   // Use only the base scene description (before first [cut]) for each panel
-  const sceneDescriptions = script.scenes.map((s, i) => {
+  const sceneDescriptions = scenesToShow.map((s, i) => {
     const baseDescription = s.visualDescription.split('[cut]')[0].trim();
     return `Panel ${i + 1} (${s.cameraShot}): ${baseDescription}`;
   }).join("\n");
 
-  // For 9:16 portrait mode, each panel is also 9:16
-  const layoutDesc = aspectRatio === '9:16'
-    ? 'Each panel must be 9:16 portrait orientation. The grid should be portrait-oriented overall.'
-    : 'Each panel must be 16:9 landscape orientation. The grid should be landscape-oriented overall.';
+  // Build explicit layout instructions based on aspect ratio
+  const isPortrait = aspectRatio === '9:16';
+  const layoutInstructions = isPortrait
+    ? `CRITICAL PANEL SHAPE - PORTRAIT MODE:
+    - The overall grid image should be TALLER than it is WIDE (portrait orientation).
+    - Each of the 9 panels must be VERTICAL/PORTRAIT (taller than wide), like a phone screen or TikTok video.
+    - Panel dimensions: each panel is 9 units wide × 16 units tall (9:16 aspect ratio).
+    - Grid dimensions: 3 columns × 3 rows = 27 units wide × 48 units tall total.
+    - Think of it as 9 vertical smartphone screens arranged in a 3×3 pattern.`
+    : `CRITICAL PANEL SHAPE - LANDSCAPE MODE:
+    - The overall grid image should be WIDER than it is TALL (landscape orientation).
+    - Each of the 9 panels must be HORIZONTAL/LANDSCAPE (wider than tall), like a movie screen.
+    - Panel dimensions: each panel is 16 units wide × 9 units tall (16:9 aspect ratio).
+    - Grid dimensions: 3 columns × 3 rows = 48 units wide × 27 units tall total.
+    - Think of it as 9 widescreen TV frames arranged in a 3×3 pattern.`;
+
+  // For 15-scene mode, explicitly tell the model this is NOT the ending
+  const continuationNote = totalScenes > 9
+    ? `
+    IMPORTANT - STORY CONTINUATION:
+    This is scenes 1-9 of a ${totalScenes}-scene story. The story CONTINUES after panel 9.
+    Panel 9 should NOT show any ending, conclusion, logo, or resolution.
+    Panel 9 should feel like a MID-STORY moment - the narrative is still building.
+    Avoid compositions that suggest finality (e.g., characters walking away, sunset endings, "looking back" poses).
+    `
+    : '';
 
   const prompt = `
     Art Style: ${script.style}
 
-    Create a professional 3x3 cinematic storyboard grid containing exactly 9 panels for the following story.
+    Create a professional 3×3 cinematic storyboard grid containing exactly 9 panels for the following story.
+    ${continuationNote}
 
-    CRITICAL LAYOUT REQUIREMENTS:
-    - The 9 panels must fill the ENTIRE image edge-to-edge with NO gaps, borders, or white space between them.
+    ${layoutInstructions}
+
+    GRID STRUCTURE:
+    - The 9 panels must fill the ENTIRE image edge-to-edge with NO gaps, borders, or white space.
     - Each panel must be exactly 1/3 of the total width and 1/3 of the total height.
-    - ${layoutDesc}
     - NO margins, padding, or frames around or between panels.
     - The panels must touch each other directly - seamless grid.
+    - Top row: panels 1, 2, 3 (left to right)
+    - Middle row: panels 4, 5, 6 (left to right)
+    - Bottom row: panels 7, 8, 9 (left to right)
 
     Ensure consistent characters, lighting, and style across all 9 panels.
     ${refImages && refImages.length > 0 ? 'Use the provided reference image(s) for character designs, art style, and visual consistency.' : ''}
 
     Scenes:
     ${sceneDescriptions}
-
-    Structure:
-    Row 1: Establishing Context (Wide/Long shots)
-    Row 2: Core Action (Medium shots)
-    Row 3: Details & Angles (Close-ups, High/Low angles)
   `;
 
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [{ text: prompt }];
@@ -295,124 +500,561 @@ export const generateStoryboard = async (script: Script, refImages?: string[], a
   }
 };
 
-export const generateVideoForScene = async (
+/**
+ * Generate second 3x2 storyboard grid for Seedance mode (scenes 10-15)
+ * Uses the first grid as a style reference along with any user-provided reference images
+ */
+export const generateStoryboard2 = async (
+  script: Script,
+  stylePanels: string[],  // Individual panels from first storyboard as style reference
+  refImages?: string[],
+  aspectRatio: AspectRatio = '16:9'
+): Promise<string> => {
+  const ai = getClient();
+
+  // Get scenes 10-15 (indices 9-14)
+  const scenes10to15 = script.scenes.slice(9, 15);
+  if (scenes10to15.length !== 6) {
+    throw new Error(`Expected 6 scenes for second grid, got ${scenes10to15.length}`);
+  }
+
+  // Strip [cut] tags from visualDescription for storyboard
+  const sceneDescriptions = scenes10to15.map((s, i) => {
+    const baseDescription = s.visualDescription.split('[cut]')[0].trim();
+    return `Panel ${i + 1} (${s.cameraShot}): ${baseDescription}`;
+  }).join("\n");
+
+  // Determine grid aspect ratio based on panel aspect ratio
+  // For 16:9 panels: 3×2 grid = (3×16):(2×9) = 48:18 ≈ 8:3 (ultrawide landscape)
+  // For 9:16 panels: 3×2 grid = (3×9):(2×16) = 27:32 (tall portrait)
+  const isPortrait = aspectRatio === '9:16';
+  // For the API config - use closest supported aspect ratios
+  // 9:16 panels in 3x2 grid = 27:32 (0.84) → closest is 4:5 (0.8)
+  // 16:9 panels in 3x2 grid = 48:18 (2.67) → closest is 16:9 (1.78) or could use wider
+  const gridAspectRatio = isPortrait ? '4:5' : '16:9';
+
+  // Build layout instructions based on aspect ratio
+  const layoutInstructions = isPortrait
+    ? `CRITICAL PANEL SHAPE - PORTRAIT MODE:
+    - The overall grid image should be TALLER than it is WIDE (portrait orientation).
+    - Each of the 6 panels must be VERTICAL/PORTRAIT (taller than wide), like a phone screen or TikTok video.
+    - Panel dimensions: each panel is 9 units wide × 16 units tall (9:16 aspect ratio).
+    - Grid dimensions: 3 columns × 2 rows = 27 units wide × 32 units tall total.
+    - Think of it as 6 vertical smartphone screens arranged in a 3×2 pattern.`
+    : `CRITICAL PANEL SHAPE - LANDSCAPE MODE:
+    - The overall grid image should be MUCH WIDER than it is TALL (ultrawide landscape).
+    - Each of the 6 panels must be HORIZONTAL/LANDSCAPE (wider than tall), like a movie screen.
+    - Panel dimensions: each panel is 16 units wide × 9 units tall (16:9 aspect ratio).
+    - Grid dimensions: 3 columns × 2 rows = 48 units wide × 18 units tall total.
+    - Think of it as 6 widescreen TV frames arranged in a 3×2 pattern.`;
+
+  // Prompt with strong style consistency instructions
+  const prompt = `
+    Art Style: ${script.style}
+
+    Create a professional 3×2 cinematic storyboard grid containing exactly 6 panels for the following story continuation.
+    These are scenes 10-15 of a 15-scene story. This grid directly continues from the first 9 scenes.
+
+    CRITICAL STYLE CONSISTENCY:
+    - You MUST exactly match the art style, character designs, and color palette from the reference images.
+    - The reference images show the same characters/subjects from earlier in this story.
+    - Use the EXACT same rendering style (line work, shading, colors, proportions).
+    - These 6 panels must look like they were drawn by the same artist as the reference panels.
+    - DO NOT change the art style, character proportions, or color scheme.
+
+    ${layoutInstructions}
+
+    GRID STRUCTURE:
+    - The 6 panels must fill the ENTIRE image edge-to-edge with NO gaps, borders, or white space.
+    - Layout: 3 columns × 2 rows = 6 panels total.
+    - NO margins, padding, or frames around or between panels.
+    - The panels must touch each other directly - seamless grid.
+    - Top row: panels 1, 2, 3 (left to right)
+    - Bottom row: panels 4, 5, 6 (left to right)
+
+    NARRATIVE:
+    - Panel 6 (bottom right) is the FINAL scene of the entire story - it should feel like a conclusion.
+    - Panels 1-5 should continue building the narrative towards the ending.
+
+    Scenes:
+    ${sceneDescriptions}
+  `;
+
+  const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [{ text: prompt }];
+
+  // Add individual panels as style references (not the full grid)
+  for (const panel of stylePanels) {
+    const cleanPanel = panel.includes(',') ? panel.split(',')[1] : panel;
+    parts.push({
+      inlineData: {
+        mimeType: 'image/png',
+        data: cleanPanel
+      }
+    });
+  }
+
+  // Add user reference images if provided
+  if (refImages && refImages.length > 0) {
+    for (const refImage of refImages) {
+      parts.push({
+        inlineData: {
+          mimeType: 'image/jpeg',
+          data: refImage
+        }
+      });
+    }
+  }
+
+  try {
+    // Use dynamic aspect ratio based on panel orientation:
+    // - 16:9 panels → 21:9 ultrawide (3×16 : 2×9 = 48:18 ≈ 21:9)
+    // - 9:16 panels → 4:5 tall portrait (3×9 : 2×16 = 27:32 ≈ 4:5)
+    const response = await ai.models.generateContent({
+      model: "gemini-3-pro-image-preview",
+      contents: { parts },
+      config: {
+        safetySettings,
+        imageConfig: {
+          aspectRatio: gridAspectRatio,
+          imageSize: "2K"
+        }
+      }
+    });
+
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+      }
+    }
+    throw new Error("No image generated in response for second storyboard");
+  } catch (error) {
+    handleApiError(error, "Second storyboard generation");
+    throw error;
+  }
+};
+
+// Generate video using Seedance API
+const generateSeedanceVideo = async (
   scene: Scene,
   startFrameBase64: string,
-  aspectRatio: AspectRatio = '16:9'
+  aspectRatio: AspectRatio,
+  resolution: SeedanceResolution,
+  generateAudio: boolean,
+  voiceMode: VoiceMode = 'tts',
+  characters?: Character[]
+): Promise<string> => {
+  // First, upload the image to R2 to get a public URL
+  const uploadRes = await fetch('/api/upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ images: [startFrameBase64] })
+  });
+
+  if (!uploadRes.ok) {
+    const uploadError = await uploadRes.json();
+    throw new Error(`Image upload failed: ${uploadError.error || 'Unknown error'}`);
+  }
+
+  const { urls } = await uploadRes.json();
+  const imageUrl = urls[0];
+
+  // Build prompt for Seedance
+  let prompt = `${scene.visualDescription}. ${scene.audioDescription || ''}`.trim();
+
+  // Add audio instructions - CRITICAL: No background music
+  const audioMode = voiceMode === 'speech_in_video'
+    ? 'Include ambient sound effects. Characters speak dialogue in ENGLISH only. ABSOLUTELY NO BACKGROUND MUSIC.'
+    : 'Include ambient sound effects only. NO DIALOGUE. ABSOLUTELY NO BACKGROUND MUSIC.';
+
+  prompt = `${prompt}\n\nAUDIO: ${audioMode}`;
+
+  // Add dialogue for speech-in-video mode
+  if (voiceMode === 'speech_in_video') {
+    const dialogueSection = buildDialoguePrompt(scene, characters);
+    if (dialogueSection) {
+      prompt = `${prompt}\n${dialogueSection}`;
+    }
+  }
+
+  // Call Seedance API
+  const seedanceRes = await fetch('/api/video/seedance', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt,
+      imageUrl,
+      aspectRatio,
+      resolution,
+      generateAudio
+    })
+  });
+
+  if (!seedanceRes.ok) {
+    const seedanceError = await seedanceRes.json();
+    throw new Error(`Seedance generation failed: ${seedanceError.error || 'Unknown error'}`);
+  }
+
+  const { videoUrl } = await seedanceRes.json();
+  return videoUrl;
+};
+
+/**
+ * Build dialogue prompt section for speech-in-video mode
+ */
+const buildDialoguePrompt = (scene: Scene, characters?: Character[]): string => {
+  if (!scene.dialogue || scene.dialogue.length === 0) {
+    // Fallback to voiceoverText if no dialogue
+    if (scene.voiceoverText?.trim()) {
+      return `DIALOGUE (speak in English): "${scene.voiceoverText}"`;
+    }
+    return '';
+  }
+
+  // Build character voice profile map
+  const voiceProfiles = new Map<string, string>();
+  if (characters) {
+    for (const char of characters) {
+      voiceProfiles.set(char.name.toLowerCase(), char.voiceProfile || '');
+    }
+  }
+
+  // Build dialogue lines with speaker and voice profile
+  const dialogueLines = scene.dialogue.map(line => {
+    const profile = voiceProfiles.get(line.speaker.toLowerCase());
+    const profileHint = profile ? ` (voice: ${profile})` : '';
+    return `${line.speaker}${profileHint}: "${line.text}"`;
+  }).join('\n      ');
+
+  return `DIALOGUE - CRITICAL: All speech must be in ENGLISH language only:
+      ${dialogueLines}`;
+};
+
+// Generate video using Veo API
+const generateVeoVideo = async (
+  scene: Scene,
+  startFrameBase64: string,
+  aspectRatio: AspectRatio,
+  voiceMode: VoiceMode = 'tts',
+  characters?: Character[]
 ): Promise<string> => {
   const ai = getClient();
   const cleanBase64 = startFrameBase64.split(',')[1] || startFrameBase64;
 
+  // Build audio instructions based on voice mode
+  let audioInstructions: string;
+  let dialoguePrompt = '';
+
+  if (voiceMode === 'speech_in_video') {
+    dialoguePrompt = buildDialoguePrompt(scene, characters);
+    audioInstructions = `
+      AUDIO INSTRUCTIONS:
+      - Include ambient sound effects matching the scene atmosphere (wind, footsteps, environment sounds, etc.)
+      - ABSOLUTELY NO BACKGROUND MUSIC - we will add our own music track in post-production.
+      - NO musical score, NO soundtrack, NO instrumental music of any kind.
+      - CRITICAL: All dialogue MUST be spoken in ENGLISH language only. Do NOT use any other language.
+      - Characters should speak the provided dialogue naturally with their described voice characteristics.
+      - Ensure lip sync matches the spoken words.
+    `;
+  } else {
+    audioInstructions = `
+      AUDIO INSTRUCTIONS:
+      - Include ambient sound effects matching the scene atmosphere (wind, footsteps, environment sounds, etc.)
+      - ABSOLUTELY NO BACKGROUND MUSIC - we will add our own music track in post-production.
+      - NO musical score, NO soundtrack, NO instrumental music of any kind.
+      - NO DIALOGUE or spoken words - voiceover will be added separately.
+    `;
+  }
+
+  let operation = await ai.models.generateVideos({
+    model: 'veo-3.1-fast-generate-preview',
+    prompt: `
+      Visuals: ${scene.visualDescription}.
+      Audio Atmosphere: ${scene.audioDescription}.
+      ${dialoguePrompt}
+
+      PACING INSTRUCTION: The output video will be ~8 seconds long (fixed).
+      This scene is exactly 8 seconds.
+      CRITICAL: Ensure the primary action described happens IMMEDIATELY and concludes efficiently. Do not pad the start with static frames.
+
+      ${audioInstructions}
+
+      Cinematic lighting, consistent style with input image.
+    `,
+    image: {
+      imageBytes: cleanBase64,
+      mimeType: 'image/png'
+    },
+    config: {
+      numberOfVideos: 1,
+      resolution: '720p',
+      aspectRatio: aspectRatio
+    }
+  });
+
+  while (!operation.done) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    operation = await ai.operations.getVideosOperation({ operation: operation });
+  }
+
+  const opError = (operation as { error?: { message?: string; code?: string } }).error;
+  if (opError) {
+    throw new Error(`Video generation failed: ${opError.message || opError.code}`);
+  }
+
+  // Log full response for debugging
+  const generatedVideos = operation.response?.generatedVideos;
+  if (!generatedVideos || generatedVideos.length === 0) {
+    const response = operation.response as { raiMediaFilteredCount?: number; raiMediaFilteredReasons?: string[] };
+    console.error('[Veo] No videos in response:', JSON.stringify(operation.response, null, 2));
+
+    // Check for content filter rejection
+    if (response?.raiMediaFilteredCount && response?.raiMediaFilteredReasons?.length) {
+      const reason = response.raiMediaFilteredReasons[0];
+      throw new Error(`Content blocked by Veo safety filter: ${reason}`);
+    }
+    throw new Error("Video generation completed but no videos returned. This may be due to content filtering or API limits.");
+  }
+
+  const firstVideo = generatedVideos[0];
+  const videoUri = firstVideo.video?.uri;
+  if (!videoUri) {
+    console.error('[Veo] Video object missing URI:', JSON.stringify(firstVideo, null, 2));
+    throw new Error("Video generated but URI not available. The video may still be processing or was blocked by content filters.");
+  }
+
+  const apiKey = getApiKey();
+  const response = await fetch(`${videoUri}&key=${apiKey}`);
+  if (!response.ok) {
+    throw new Error(`Failed to download generated video: ${response.statusText}`);
+  }
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
+};
+
+export const generateVideoForScene = async (
+  scene: Scene,
+  startFrameBase64: string,
+  aspectRatio: AspectRatio = '16:9',
+  videoModel: VideoModel = 'veo-3.1',
+  seedanceResolution: SeedanceResolution = '720p',
+  seedanceAudio: boolean = false,
+  voiceMode: VoiceMode = 'tts',
+  characters?: Character[]
+): Promise<string> => {
   try {
-    let operation = await ai.models.generateVideos({
-      model: 'veo-3.1-fast-generate-preview',
-      prompt: `
-        Visuals: ${scene.visualDescription}.
-        Audio Atmosphere: ${scene.audioDescription}.
-
-        PACING INSTRUCTION: The output video will be ~8 seconds long (fixed).
-        This scene is exactly 8 seconds.
-        CRITICAL: Ensure the primary action described happens IMMEDIATELY and concludes efficiently. Do not pad the start with static frames.
-
-        AUDIO INSTRUCTIONS:
-        - Include ambient sound effects matching the scene atmosphere.
-        - NO MUSIC.
-        - NO DIALOGUE or spoken words.
-
-        Cinematic lighting, consistent style with input image.
-      `,
-      image: {
-        imageBytes: cleanBase64,
-        mimeType: 'image/png'
-      },
-      config: {
-        numberOfVideos: 1,
-        resolution: '720p',
-        aspectRatio: aspectRatio
-      }
-    });
-
-    while (!operation.done) {
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      operation = await ai.operations.getVideosOperation({ operation: operation });
+    if (videoModel === 'seedance-1.5') {
+      return await generateSeedanceVideo(scene, startFrameBase64, aspectRatio, seedanceResolution, seedanceAudio, voiceMode, characters);
+    } else {
+      return await generateVeoVideo(scene, startFrameBase64, aspectRatio, voiceMode, characters);
     }
-
-    const opError = (operation as { error?: { message?: string; code?: string } }).error;
-    if (opError) {
-      throw new Error(`Video generation failed: ${opError.message || opError.code}`);
-    }
-
-    // Log full response for debugging
-    const generatedVideos = operation.response?.generatedVideos;
-    if (!generatedVideos || generatedVideos.length === 0) {
-      const response = operation.response as { raiMediaFilteredCount?: number; raiMediaFilteredReasons?: string[] };
-      console.error('[Veo] No videos in response:', JSON.stringify(operation.response, null, 2));
-
-      // Check for content filter rejection
-      if (response?.raiMediaFilteredCount && response?.raiMediaFilteredReasons?.length) {
-        const reason = response.raiMediaFilteredReasons[0];
-        throw new Error(`Content blocked by Veo safety filter: ${reason}`);
-      }
-      throw new Error("Video generation completed but no videos returned. This may be due to content filtering or API limits.");
-    }
-
-    const firstVideo = generatedVideos[0];
-    const videoUri = firstVideo.video?.uri;
-    if (!videoUri) {
-      console.error('[Veo] Video object missing URI:', JSON.stringify(firstVideo, null, 2));
-      throw new Error("Video generated but URI not available. The video may still be processing or was blocked by content filters.");
-    }
-
-    const apiKey = getApiKey();
-    const response = await fetch(`${videoUri}&key=${apiKey}`);
-    if (!response.ok) {
-      throw new Error(`Failed to download generated video: ${response.statusText}`);
-    }
-    const blob = await response.blob();
-    return URL.createObjectURL(blob);
   } catch (error) {
     handleApiError(error, `Video generation for scene ${scene.id}`);
     throw error; // Unreachable - handleApiError always throws
   }
 };
 
-export const generateMasterAudio = async (script: Script): Promise<string> => {
-  const ai = getClient();
-  const fullText = script.scenes.map(s => s.voiceoverText).join(" ... ");
-
-  if (!fullText.trim()) return "";
-
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: fullText }] }],
-      config: {
-        safetySettings,
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Fenrir' },
-          },
+/**
+ * Generate TTS audio for a single voice
+ */
+const generateSingleVoiceAudio = async (
+  ai: ReturnType<typeof getClient>,
+  text: string,
+  voiceName: GeminiVoice
+): Promise<Blob> => {
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash-preview-tts",
+    contents: [{ parts: [{ text }] }],
+    config: {
+      safetySettings,
+      responseModalities: [Modality.AUDIO],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: { voiceName },
         },
       },
-    });
+    },
+  });
 
-    const audioPart = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
-    if (!audioPart?.data) throw new Error("No audio data in response");
+  const audioPart = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+  if (!audioPart?.data) throw new Error("No audio data in response");
 
-    // Gemini TTS returns audio with mimeType in the response
-    // Common formats: audio/L16 (PCM), audio/wav, audio/mpeg
-    const mimeType = audioPart.mimeType || 'audio/wav';
+  const mimeType = audioPart.mimeType || 'audio/wav';
 
-    // If it's raw PCM (L16), we need to convert to WAV for browser playback
-    if (mimeType.includes('L16') || mimeType.includes('pcm')) {
-      // Convert PCM to WAV by adding WAV header
-      const pcmData = Uint8Array.from(atob(audioPart.data), c => c.charCodeAt(0));
-      const wavBlob = pcmToWav(pcmData, 24000, 1); // Gemini TTS uses 24kHz mono
-      return URL.createObjectURL(wavBlob);
+  // If it's raw PCM (L16), we need to convert to WAV for browser playback
+  if (mimeType.includes('L16') || mimeType.includes('pcm')) {
+    const pcmData = Uint8Array.from(atob(audioPart.data), c => c.charCodeAt(0));
+    return pcmToWav(pcmData, 24000, 1); // Gemini TTS uses 24kHz mono
+  }
+
+  // Convert base64 to blob
+  const binaryString = atob(audioPart.data);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mimeType });
+};
+
+/**
+ * Concatenate audio blobs using Web Audio API
+ */
+const concatenateAudioBlobs = async (blobs: Blob[]): Promise<Blob> => {
+  if (blobs.length === 0) return new Blob([], { type: 'audio/wav' });
+  if (blobs.length === 1) return blobs[0];
+
+  const audioContext = new AudioContext({ sampleRate: 24000 });
+  const audioBuffers: AudioBuffer[] = [];
+
+  // Decode all audio blobs to AudioBuffers
+  for (const blob of blobs) {
+    const arrayBuffer = await blob.arrayBuffer();
+    try {
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      audioBuffers.push(audioBuffer);
+    } catch (e) {
+      console.warn('Failed to decode audio blob, skipping:', e);
     }
+  }
 
-    return `data:${mimeType};base64,${audioPart.data}`;
+  if (audioBuffers.length === 0) {
+    audioContext.close();
+    return new Blob([], { type: 'audio/wav' });
+  }
+
+  // Calculate total length
+  const totalLength = audioBuffers.reduce((sum, buf) => sum + buf.length, 0);
+  const numberOfChannels = audioBuffers[0].numberOfChannels;
+  const sampleRate = audioBuffers[0].sampleRate;
+
+  // Create combined buffer
+  const combinedBuffer = audioContext.createBuffer(numberOfChannels, totalLength, sampleRate);
+
+  // Copy data from each buffer
+  let offset = 0;
+  for (const buffer of audioBuffers) {
+    for (let channel = 0; channel < numberOfChannels; channel++) {
+      const channelData = combinedBuffer.getChannelData(channel);
+      const sourceData = buffer.getChannelData(channel);
+      channelData.set(sourceData, offset);
+    }
+    offset += buffer.length;
+  }
+
+  audioContext.close();
+
+  // Convert AudioBuffer to WAV blob
+  return audioBufferToWav(combinedBuffer);
+};
+
+/**
+ * Convert AudioBuffer to WAV Blob
+ */
+const audioBufferToWav = (buffer: AudioBuffer): Blob => {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const bytesPerSample = 2;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = buffer.length * blockAlign;
+  const headerSize = 44;
+  const totalSize = headerSize + dataSize;
+
+  const arrayBuffer = new ArrayBuffer(totalSize);
+  const view = new DataView(arrayBuffer);
+
+  const writeString = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
+    }
+  };
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, totalSize - 8, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bytesPerSample * 8, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  // Write audio data
+  let offset = 44;
+  for (let i = 0; i < buffer.length; i++) {
+    for (let channel = 0; channel < numChannels; channel++) {
+      const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
+      const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+      view.setInt16(offset, intSample, true);
+      offset += 2;
+    }
+  }
+
+  return new Blob([arrayBuffer], { type: 'audio/wav' });
+};
+
+export const generateMasterAudio = async (
+  script: Script,
+  multiCharacter: boolean = false
+): Promise<string> => {
+  const ai = getClient();
+
+  try {
+    if (multiCharacter && script.characters && script.characters.length > 0) {
+      // Multi-character mode: generate audio for each dialogue line with appropriate voice
+      const characterVoiceMap = new Map<string, GeminiVoice>();
+
+      // Build character name -> voice mapping
+      for (const char of script.characters) {
+        characterVoiceMap.set(char.name.toLowerCase(), char.voiceName);
+      }
+
+      // Find narrator voice (use first character's voice or default to Fenrir)
+      const narratorVoice: GeminiVoice = script.narratorVoice || 'Fenrir';
+      characterVoiceMap.set('narrator', narratorVoice);
+
+      // Collect all dialogue lines in order across all scenes
+      const audioBlobs: Blob[] = [];
+
+      for (const scene of script.scenes) {
+        if (scene.dialogue && scene.dialogue.length > 0) {
+          // Generate audio for each dialogue line
+          for (const line of scene.dialogue) {
+            if (!line.text.trim()) continue;
+
+            const speakerLower = line.speaker.toLowerCase();
+            const voice = characterVoiceMap.get(speakerLower) || narratorVoice;
+
+            console.log(`[TTS] Generating audio for ${line.speaker} with voice ${voice}`);
+            const blob = await generateSingleVoiceAudio(ai, line.text, voice);
+            audioBlobs.push(blob);
+          }
+        } else if (scene.voiceoverText?.trim()) {
+          // Fallback to voiceoverText if no dialogue
+          const blob = await generateSingleVoiceAudio(ai, scene.voiceoverText, narratorVoice);
+          audioBlobs.push(blob);
+        }
+      }
+
+      if (audioBlobs.length === 0) return "";
+
+      // Concatenate all audio blobs
+      const combinedBlob = await concatenateAudioBlobs(audioBlobs);
+      return URL.createObjectURL(combinedBlob);
+    } else {
+      // Single narrator mode: use AI-selected voice or default
+      const voiceName: GeminiVoice = script.narratorVoice || 'Fenrir';
+      const fullText = script.scenes.map(s => s.voiceoverText).join(" ... ");
+
+      if (!fullText.trim()) return "";
+
+      console.log(`[TTS] Generating audio with narrator voice: ${voiceName}`);
+      const blob = await generateSingleVoiceAudio(ai, fullText, voiceName);
+      return URL.createObjectURL(blob);
+    }
   } catch (error) {
     handleApiError(error, "Voiceover generation");
     throw error; // Unreachable - handleApiError always throws

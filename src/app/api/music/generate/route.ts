@@ -1,3 +1,5 @@
+export const runtime = 'edge';
+
 import { NextRequest, NextResponse } from 'next/server';
 
 const BASE_URL = 'https://api.kie.ai/api/v1';

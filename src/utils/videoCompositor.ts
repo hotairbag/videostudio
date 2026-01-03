@@ -1,18 +1,25 @@
-import { Scene, AspectRatio } from "@/types";
+import { Scene, AspectRatio, VideoModel } from "@/types";
 import { getCanvasDimensions } from "./imageUtils";
 
-// Veo generates ~8 second videos regardless of script timeRange
-// Multi-shot cuts are handled by Veo via [cut] tags in the prompt
-const VEO_VIDEO_DURATION = 8;
+// Video duration per clip based on model
+// Veo generates ~8 second videos
+// Seedance generates ~4 second videos
+const VIDEO_DURATION_BY_MODEL: Record<VideoModel, number> = {
+  'veo-3.1': 8,
+  'seedance-1.5': 4,
+};
 
 export const composeAndExportVideo = async (
   scenes: Scene[],
   videoUrls: Record<number, string>,
-  masterAudioUrl: string,
+  masterAudioUrl: string | null,
   backgroundMusicUrl: string | null,
   onProgress: (msg: string) => void,
-  aspectRatio: AspectRatio = '16:9'
+  aspectRatio: AspectRatio = '16:9',
+  videoModel: VideoModel = 'veo-3.1'
 ): Promise<Blob> => {
+
+  const clipDuration = VIDEO_DURATION_BY_MODEL[videoModel];
 
   onProgress("Initializing compositor...");
 
@@ -37,7 +44,10 @@ export const composeAndExportVideo = async (
   };
 
   onProgress("Loading audio tracks...");
-  const voiceBuffer = await loadAudio(masterAudioUrl);
+  let voiceBuffer: AudioBuffer | null = null;
+  if (masterAudioUrl) {
+    voiceBuffer = await loadAudio(masterAudioUrl);
+  }
 
   let musicBuffer: AudioBuffer | null = null;
   if (backgroundMusicUrl) {
@@ -56,7 +66,11 @@ export const composeAndExportVideo = async (
     return new Promise((resolve, reject) => {
       const vid = document.createElement('video');
       vid.crossOrigin = "anonymous";
-      vid.src = url;
+      // Use proxy for R2 videos to avoid CORS issues during export
+      const proxyUrl = url.startsWith('https://video-studio.jarwater.com/')
+        ? `/api/proxy-video?url=${encodeURIComponent(url)}`
+        : url;
+      vid.src = proxyUrl;
       vid.playsInline = true;
       vid.oncanplaythrough = () => resolve(vid);
       vid.onerror = (e) => reject(e);
@@ -105,17 +119,21 @@ export const composeAndExportVideo = async (
   const scenesWithVideo = scenes.filter(s => videoUrls[s.id]);
 
   // Total duration = max(voiceover, all videos)
-  // Each Veo video is ~8 seconds
-  const totalVideoDuration = scenesWithVideo.length * VEO_VIDEO_DURATION;
-  const totalDuration = Math.max(voiceBuffer.duration, totalVideoDuration);
+  // Video duration depends on model: Veo ~8s, Seedance ~4s
+  const totalVideoDuration = scenesWithVideo.length * clipDuration;
+  const voiceDuration = voiceBuffer?.duration || 0;
+  const totalDuration = Math.max(voiceDuration, totalVideoDuration);
 
-  // Voice at full volume
-  const voiceNode = audioCtx.createBufferSource();
-  voiceNode.buffer = voiceBuffer;
-  const voiceGain = audioCtx.createGain();
-  voiceGain.gain.value = 1.0;
-  voiceNode.connect(voiceGain);
-  voiceGain.connect(dest);
+  // Voice at full volume (if available)
+  let voiceNode: AudioBufferSourceNode | null = null;
+  if (voiceBuffer) {
+    voiceNode = audioCtx.createBufferSource();
+    voiceNode.buffer = voiceBuffer;
+    const voiceGain = audioCtx.createGain();
+    voiceGain.gain.value = 1.0;
+    voiceNode.connect(voiceGain);
+    voiceGain.connect(dest);
+  }
 
   // Background music at 20% volume
   if (musicBuffer) {
@@ -143,7 +161,7 @@ export const composeAndExportVideo = async (
     recorder.onerror = reject;
 
     recorder.start();
-    voiceNode.start(0);
+    if (voiceNode) voiceNode.start(0);
     const startTime = performance.now();
 
     let animationFrameId: number;
@@ -158,9 +176,9 @@ export const composeAndExportVideo = async (
         return;
       }
 
-      // Calculate current scene based on video timing (8 seconds each)
+      // Calculate current scene based on video timing
       const sceneIndex = Math.min(
-        Math.floor(now / VEO_VIDEO_DURATION),
+        Math.floor(now / clipDuration),
         scenesWithVideo.length - 1
       );
       const currentScene = scenesWithVideo[sceneIndex];

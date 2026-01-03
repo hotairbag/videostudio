@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Script, Scene, AspectRatio } from '@/types';
+import { Script, Scene, AspectRatio, VideoModel, VoiceMode } from '@/types';
 import { composeAndExportVideo } from '@/utils/videoCompositor';
 
 interface ProductionProps {
@@ -17,10 +17,15 @@ interface ProductionProps {
   onGenerateVideo: (sceneId: number) => void;
   onGenerateFullMovie: () => void;
   aspectRatio: AspectRatio;
+  videoModel: VideoModel;
+  voiceMode: VoiceMode;
 }
 
-// Veo generates ~8 second videos regardless of the script timeRange
-const VEO_VIDEO_DURATION = 8;
+// Video duration per clip based on model
+const CLIP_DURATION_BY_MODEL: Record<VideoModel, number> = {
+  'veo-3.1': 8,
+  'seedance-1.5': 4,
+};
 
 const parseDuration = (timeRange: string): number => {
   try {
@@ -49,7 +54,8 @@ const MoviePlayer: React.FC<{
   audioUrl: string | null;
   musicUrl: string | null;
   onClose: () => void;
-}> = ({ scenes, videoUrls, audioUrl, musicUrl, onClose }) => {
+  clipDuration: number;
+}> = ({ scenes, videoUrls, audioUrl, musicUrl, onClose, clipDuration }) => {
   const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
@@ -60,40 +66,26 @@ const MoviePlayer: React.FC<{
   const videoRefs = useRef<Record<number, HTMLVideoElement | null>>({});
   const totalDurationRef = useRef<number>(0);
 
-  // Calculate total duration: use Veo video duration (8s each) for scenes with videos
+  // Calculate total duration based on clip duration
   useEffect(() => {
     const scenesWithVideo = scenes.filter(s => videoUrls[s.id]);
-    totalDurationRef.current = scenesWithVideo.length * VEO_VIDEO_DURATION;
-  }, [scenes, videoUrls]);
+    totalDurationRef.current = scenesWithVideo.length * clipDuration;
+  }, [scenes, videoUrls, clipDuration]);
 
   useEffect(() => {
     let animationFrame: number;
-    let videoStartTime = 0; // Track when current video started
 
     const update = () => {
       if (isPlaying) {
-        // Use video-based timing: each Veo video is ~8 seconds
         const scenesWithVideo = scenes.filter(s => videoUrls[s.id]);
-        const totalVideoDuration = scenesWithVideo.length * VEO_VIDEO_DURATION;
+        const totalVideoDuration = scenesWithVideo.length * clipDuration;
 
-        // Get elapsed time from audio if available, otherwise use video timing
-        let currentTime = 0;
-        if (audioRef.current && !audioRef.current.paused) {
-          currentTime = audioRef.current.currentTime;
-        }
-
-        // Calculate progress based on video duration (not audio)
-        const videoProgress = currentSceneIndex * VEO_VIDEO_DURATION;
+        // Calculate progress based on video duration
+        const videoProgress = currentSceneIndex * clipDuration;
         const currentVideo = videoRefs.current[scenesWithVideo[currentSceneIndex]?.id];
         if (currentVideo) {
-          const effectiveTime = videoProgress + Math.min(currentVideo.currentTime, VEO_VIDEO_DURATION);
+          const effectiveTime = videoProgress + Math.min(currentVideo.currentTime, clipDuration);
           setProgress((effectiveTime / totalVideoDuration) * 100);
-        }
-
-        // Scene switching is handled by onended event on videos (fallback mechanism)
-        // But also check if audio has ended
-        if (audioRef.current && audioRef.current.ended) {
-          // Audio ended but videos might still be playing - let videos finish
         }
       }
       animationFrame = requestAnimationFrame(update);
@@ -104,7 +96,7 @@ const MoviePlayer: React.FC<{
     }
 
     return () => cancelAnimationFrame(animationFrame);
-  }, [isPlaying, currentSceneIndex, scenes, videoUrls]);
+  }, [isPlaying, currentSceneIndex, scenes, videoUrls, clipDuration]);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -273,8 +265,12 @@ const Production: React.FC<ProductionProps> = ({
   isGeneratingFullMovie,
   onGenerateVideo,
   onGenerateFullMovie,
-  aspectRatio
+  aspectRatio,
+  videoModel,
+  voiceMode
 }) => {
+  const clipDuration = CLIP_DURATION_BY_MODEL[videoModel];
+  const isSeedance = videoModel === 'seedance-1.5';
   const [showPlayer, setShowPlayer] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState("");
@@ -306,14 +302,15 @@ const Production: React.FC<ProductionProps> = ({
   const generatedCount = Object.keys(generatedVideos).length;
   const failedCount = totalScenes - generatedCount - generatingVideoIds.length;
   const isAllComplete = generatedCount === totalScenes;
-  const hasEnoughToWatch = generatedCount >= 1 && !!masterAudioUrl;
+  // In speech_in_video mode, voices are baked into videos - no separate audio needed
+  const hasEnoughToWatch = generatedCount >= 1 && (voiceMode === 'speech_in_video' || !!masterAudioUrl);
 
   const handlePlayMovie = () => {
     if (hasEnoughToWatch) setShowPlayer(true);
   };
 
   const handleExport = async () => {
-    if (!hasEnoughToWatch || !masterAudioUrl) return;
+    if (!hasEnoughToWatch) return;
     setIsExporting(true);
     setExportProgress("Starting export...");
 
@@ -324,7 +321,8 @@ const Production: React.FC<ProductionProps> = ({
         masterAudioUrl,
         backgroundMusicUrl,
         (msg) => setExportProgress(msg),
-        aspectRatio
+        aspectRatio,
+        videoModel
       );
 
       const url = URL.createObjectURL(blob);
@@ -517,7 +515,7 @@ const Production: React.FC<ProductionProps> = ({
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
-                        <span className="text-xs font-mono uppercase tracking-widest bg-black/50 px-2 py-1 rounded">Veo Rendering...</span>
+                        <span className="text-xs font-mono uppercase tracking-widest bg-black/50 px-2 py-1 rounded">{isSeedance ? 'Seedance' : 'Veo'} Rendering...</span>
                       </div>
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-[2px]">
@@ -533,7 +531,7 @@ const Production: React.FC<ProductionProps> = ({
                 )}
 
                 <div className="absolute top-2 left-2 bg-black/80 text-white text-[10px] px-2 py-0.5 rounded border border-neutral-600">
-                  Scene {index + 1} • {scene.cameraShot} • {parseDuration(scene.timeRange)}s
+                  Scene {index + 1}{scene.cameraShot ? ` • ${scene.cameraShot}` : ''}{scene.timeRange ? ` • ${parseDuration(scene.timeRange)}s` : ''}
                 </div>
               </div>
 
@@ -553,6 +551,7 @@ const Production: React.FC<ProductionProps> = ({
           audioUrl={masterAudioUrl}
           musicUrl={backgroundMusicUrl}
           onClose={() => setShowPlayer(false)}
+          clipDuration={clipDuration}
         />
       )}
 

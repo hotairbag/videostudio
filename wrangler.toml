@@ -1,0 +1,24 @@
+# VideoStudio - Cloudflare Pages Configuration
+name = "videostudio"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
+
+# Environment variables (non-secret)
+[vars]
+NEXT_PUBLIC_CONVEX_URL = "https://lovable-toucan-126.convex.cloud"
+CLOUDFLARE_R2_BUCKET = "video-studio"
+
+# Note: The following secrets must be set via wrangler CLI:
+# wrangler secret put MUSIC_API_KEY
+# wrangler secret put AUTH_GOOGLE_ID
+# wrangler secret put AUTH_GOOGLE_SECRET
+# wrangler secret put CLOUDFLARE_ACCOUNT_ID
+# wrangler secret put CLOUDFLARE_R2_ACCESS_KEY_ID
+# wrangler secret put CLOUDFLARE_R2_SECRET_ACCESS_KEY
+# wrangler secret put GEMINI_API_KEY
+
+# R2 bucket binding (optional - for native R2 access in Workers)
+# [[r2_buckets]]
+# binding = "R2_BUCKET"
+# bucket_name = "video-studio"

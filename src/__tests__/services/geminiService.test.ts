@@ -21,6 +21,15 @@ jest.mock('@google/genai', () => ({
   Modality: {
     AUDIO: 'AUDIO',
   },
+  HarmCategory: {
+    HARM_CATEGORY_HATE_SPEECH: 'HARM_CATEGORY_HATE_SPEECH',
+    HARM_CATEGORY_DANGEROUS_CONTENT: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+    HARM_CATEGORY_SEXUALLY_EXPLICIT: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+    HARM_CATEGORY_HARASSMENT: 'HARM_CATEGORY_HARASSMENT',
+  },
+  HarmBlockThreshold: {
+    BLOCK_NONE: 'BLOCK_NONE',
+  },
 }));
 
 describe('geminiService', () => {
@@ -253,6 +262,158 @@ describe('geminiService', () => {
       }));
 
       await expect(generateStoryboard(mockScript)).rejects.toThrow('No image generated');
+    });
+
+    it('should include continuation instructions when totalScenes > 9', async () => {
+      setApiKey('test-key');
+
+      const { GoogleGenAI } = require('@google/genai');
+      const mockGenerateContent = jest.fn().mockResolvedValue({
+        candidates: [
+          {
+            content: {
+              parts: [{ inlineData: { data: 'base64imagedata' } }],
+            },
+          },
+        ],
+      });
+      GoogleGenAI.mockImplementation(() => ({
+        models: { generateContent: mockGenerateContent },
+      }));
+
+      await generateStoryboard(mockScript, undefined, '16:9', 15);
+
+      // Verify the prompt includes continuation instructions
+      const callArgs = mockGenerateContent.mock.calls[0][0];
+      const promptText = callArgs.contents.parts[0].text;
+      expect(promptText).toContain('STORY CONTINUATION');
+      expect(promptText).toContain('scenes 1-9 of a 15-scene story');
+      expect(promptText).toContain('Panel 9 should NOT show any ending');
+    });
+
+    it('should NOT include continuation instructions when totalScenes is 9', async () => {
+      setApiKey('test-key');
+
+      const { GoogleGenAI } = require('@google/genai');
+      const mockGenerateContent = jest.fn().mockResolvedValue({
+        candidates: [
+          {
+            content: {
+              parts: [{ inlineData: { data: 'base64imagedata' } }],
+            },
+          },
+        ],
+      });
+      GoogleGenAI.mockImplementation(() => ({
+        models: { generateContent: mockGenerateContent },
+      }));
+
+      await generateStoryboard(mockScript, undefined, '16:9', 9);
+
+      // Verify the prompt does NOT include continuation instructions
+      const callArgs = mockGenerateContent.mock.calls[0][0];
+      const promptText = callArgs.contents.parts[0].text;
+      expect(promptText).not.toContain('STORY CONTINUATION');
+    });
+  });
+
+  describe('generateStoryboard2', () => {
+    const mockScript15Scenes = {
+      title: 'Test Video',
+      style: 'cinematic',
+      scenes: Array.from({ length: 15 }, (_, i) => ({
+        id: i + 1,
+        timeRange: `00:0${Math.floor(i * 4 / 60)}:0${(i * 4) % 60} - 00:0${Math.floor((i + 1) * 4 / 60)}:0${((i + 1) * 4) % 60}`,
+        visualDescription: `Scene ${i + 1} description`,
+        audioDescription: 'Audio',
+        cameraShot: 'Wide',
+        voiceoverText: `Text for scene ${i + 1}`,
+      })),
+    };
+
+    it('should use 21:9 aspect ratio for 16:9 landscape second storyboard grid', async () => {
+      setApiKey('test-key');
+
+      const { GoogleGenAI } = require('@google/genai');
+      const mockGenerateContent = jest.fn().mockResolvedValue({
+        candidates: [
+          {
+            content: {
+              parts: [{ inlineData: { data: 'base64imagedata' } }],
+            },
+          },
+        ],
+      });
+      GoogleGenAI.mockImplementation(() => ({
+        models: { generateContent: mockGenerateContent },
+      }));
+
+      const { generateStoryboard2 } = require('@/services/geminiService');
+      const mockStylePanels = ['data:image/png;base64,abc', 'data:image/png;base64,def'];
+
+      await generateStoryboard2(mockScript15Scenes, mockStylePanels, undefined, '16:9');
+
+      // Verify the image config uses 21:9 aspect ratio for landscape
+      const callArgs = mockGenerateContent.mock.calls[0][0];
+      expect(callArgs.config.imageConfig.aspectRatio).toBe('21:9');
+      expect(callArgs.contents.parts[0].text).toContain('16:9 landscape');
+    });
+
+    it('should use 4:5 aspect ratio for 9:16 portrait second storyboard grid', async () => {
+      setApiKey('test-key');
+
+      const { GoogleGenAI } = require('@google/genai');
+      const mockGenerateContent = jest.fn().mockResolvedValue({
+        candidates: [
+          {
+            content: {
+              parts: [{ inlineData: { data: 'base64imagedata' } }],
+            },
+          },
+        ],
+      });
+      GoogleGenAI.mockImplementation(() => ({
+        models: { generateContent: mockGenerateContent },
+      }));
+
+      const { generateStoryboard2 } = require('@/services/geminiService');
+      const mockStylePanels = ['data:image/png;base64,abc'];
+
+      await generateStoryboard2(mockScript15Scenes, mockStylePanels, undefined, '9:16');
+
+      // Verify the image config uses 4:5 aspect ratio for portrait
+      const callArgs = mockGenerateContent.mock.calls[0][0];
+      expect(callArgs.config.imageConfig.aspectRatio).toBe('4:5');
+      expect(callArgs.contents.parts[0].text).toContain('9:16 portrait');
+    });
+
+    it('should include style consistency instructions', async () => {
+      setApiKey('test-key');
+
+      const { GoogleGenAI } = require('@google/genai');
+      const mockGenerateContent = jest.fn().mockResolvedValue({
+        candidates: [
+          {
+            content: {
+              parts: [{ inlineData: { data: 'base64imagedata' } }],
+            },
+          },
+        ],
+      });
+      GoogleGenAI.mockImplementation(() => ({
+        models: { generateContent: mockGenerateContent },
+      }));
+
+      const { generateStoryboard2 } = require('@/services/geminiService');
+      const mockStylePanels = ['data:image/png;base64,abc'];
+
+      await generateStoryboard2(mockScript15Scenes, mockStylePanels, undefined, '16:9');
+
+      // Verify the prompt includes style consistency instructions
+      const callArgs = mockGenerateContent.mock.calls[0][0];
+      const promptText = callArgs.contents.parts[0].text;
+      expect(promptText).toContain('CRITICAL STYLE CONSISTENCY');
+      expect(promptText).toContain('scenes 10-15 of a 15-scene story');
     });
   });
 

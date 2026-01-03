@@ -71,9 +71,11 @@ function detectContentBounds(
  * Slices a 3x3 grid image into 9 individual base64 images.
  * Automatically trims white borders from each frame.
  */
-export const sliceGridImage = (base64Image: string, aspectRatio: AspectRatio = '16:9'): Promise<string[]> => {
+export const sliceGridImage = (imageSource: string, aspectRatio: AspectRatio = '16:9'): Promise<string[]> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    // Enable CORS for cross-origin images (e.g., from R2)
+    img.crossOrigin = 'anonymous';
     img.onload = () => {
       const frames: string[] = [];
       const cols = 3;
@@ -163,7 +165,118 @@ export const sliceGridImage = (base64Image: string, aspectRatio: AspectRatio = '
       resolve(frames);
     };
     img.onerror = (e) => reject(e);
-    img.src = base64Image;
+    // Add cache-busting for URLs to avoid CORS cache issues
+    const srcWithCacheBust = imageSource.startsWith('http')
+      ? `${imageSource}${imageSource.includes('?') ? '&' : '?'}t=${Date.now()}`
+      : imageSource;
+    img.src = srcWithCacheBust;
+  });
+};
+
+/**
+ * Slices a 3x2 grid image into 6 individual base64 images.
+ * Used for Seedance mode second storyboard (scenes 10-15).
+ * Automatically trims white borders from each frame.
+ */
+export const sliceGrid3x2Image = (imageSource: string, aspectRatio: AspectRatio = '16:9'): Promise<string[]> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    // Enable CORS for cross-origin images (e.g., from R2)
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const frames: string[] = [];
+      const cols = 3;
+      const rows = 2;
+      const frameWidth = img.width / cols;
+      const frameHeight = img.height / rows;
+
+      // Temp canvas for slicing
+      const sliceCanvas = document.createElement('canvas');
+      const sliceCtx = sliceCanvas.getContext('2d');
+
+      // Output canvas for final frames (with black background)
+      const outputCanvas = document.createElement('canvas');
+      const outputCtx = outputCanvas.getContext('2d');
+
+      if (!sliceCtx || !outputCtx) {
+        reject(new Error("Could not get canvas context"));
+        return;
+      }
+
+      sliceCanvas.width = frameWidth;
+      sliceCanvas.height = frameHeight;
+
+      // Target dimensions based on aspect ratio
+      const { width: targetWidth, height: targetHeight } = getCanvasDimensions(aspectRatio);
+      outputCanvas.width = targetWidth;
+      outputCanvas.height = targetHeight;
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          // First, slice the frame from the grid
+          sliceCtx.clearRect(0, 0, frameWidth, frameHeight);
+          sliceCtx.drawImage(
+            img,
+            c * frameWidth,
+            r * frameHeight,
+            frameWidth,
+            frameHeight,
+            0,
+            0,
+            frameWidth,
+            frameHeight
+          );
+
+          // Detect content bounds (trim white borders)
+          const bounds = detectContentBounds(sliceCtx, frameWidth, frameHeight);
+
+          // Draw to output canvas with black background, scaling content to fill
+          outputCtx.fillStyle = 'black';
+          outputCtx.fillRect(0, 0, targetWidth, targetHeight);
+
+          // Scale and center the content to fill the output while maintaining aspect ratio
+          const contentAspect = bounds.w / bounds.h;
+          const targetAspect = targetWidth / targetHeight;
+
+          let drawWidth, drawHeight, drawX, drawY;
+
+          if (contentAspect > targetAspect) {
+            // Content is wider - fit to width
+            drawWidth = targetWidth;
+            drawHeight = targetWidth / contentAspect;
+            drawX = 0;
+            drawY = (targetHeight - drawHeight) / 2;
+          } else {
+            // Content is taller - fit to height
+            drawHeight = targetHeight;
+            drawWidth = targetHeight * contentAspect;
+            drawX = (targetWidth - drawWidth) / 2;
+            drawY = 0;
+          }
+
+          outputCtx.drawImage(
+            sliceCanvas,
+            bounds.x,
+            bounds.y,
+            bounds.w,
+            bounds.h,
+            drawX,
+            drawY,
+            drawWidth,
+            drawHeight
+          );
+
+          frames.push(outputCanvas.toDataURL('image/png'));
+        }
+      }
+      resolve(frames);
+    };
+    img.onerror = (e) => reject(e);
+    // Add cache-busting for URLs to avoid CORS cache issues
+    const srcWithCacheBust = imageSource.startsWith('http')
+      ? `${imageSource}${imageSource.includes('?') ? '&' : '?'}t=${Date.now()}`
+      : imageSource;
+    img.src = srcWithCacheBust;
   });
 };
 

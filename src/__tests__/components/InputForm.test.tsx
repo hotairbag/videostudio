@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import InputForm from '@/components/InputForm';
-import { AspectRatio } from '@/types';
+import { AspectRatio, VideoModel, SeedanceResolution, SeedanceSceneCount, VoiceMode } from '@/types';
 
 // Mock the imageUtils module
 jest.mock('@/utils/imageUtils', () => ({
@@ -12,11 +12,33 @@ jest.mock('@/utils/imageUtils', () => ({
 describe('InputForm', () => {
   const mockOnSubmit = jest.fn();
   const mockOnAspectRatioChange = jest.fn();
+  const mockOnEnableCutsChange = jest.fn();
+  const mockOnVideoModelChange = jest.fn();
+  const mockOnSeedanceAudioChange = jest.fn();
+  const mockOnSeedanceResolutionChange = jest.fn();
+  const mockOnSeedanceSceneCountChange = jest.fn();
+  const mockOnVoiceModeChange = jest.fn();
+  const mockOnMultiCharacterChange = jest.fn();
+
   const defaultProps = {
     onSubmit: mockOnSubmit,
     isLoading: false,
     aspectRatio: '16:9' as AspectRatio,
     onAspectRatioChange: mockOnAspectRatioChange,
+    enableCuts: true,
+    onEnableCutsChange: mockOnEnableCutsChange,
+    videoModel: 'veo-3.1' as VideoModel,
+    onVideoModelChange: mockOnVideoModelChange,
+    seedanceAudio: false,
+    onSeedanceAudioChange: mockOnSeedanceAudioChange,
+    seedanceResolution: '720p' as SeedanceResolution,
+    onSeedanceResolutionChange: mockOnSeedanceResolutionChange,
+    seedanceSceneCount: 15 as SeedanceSceneCount,
+    onSeedanceSceneCountChange: mockOnSeedanceSceneCountChange,
+    voiceMode: 'tts' as VoiceMode,
+    onVoiceModeChange: mockOnVoiceModeChange,
+    multiCharacter: false,
+    onMultiCharacterChange: mockOnMultiCharacterChange,
   };
 
   beforeEach(() => {
@@ -29,7 +51,9 @@ describe('InputForm', () => {
     expect(screen.getByText('New Project')).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/describe your video/i)).toBeInTheDocument();
     expect(screen.getByText(/Reference Video/i)).toBeInTheDocument();
-    expect(screen.getByText(/Reference Art\/Character/i)).toBeInTheDocument();
+    expect(screen.getByText(/Style Reference/i)).toBeInTheDocument();
+    // Use getAllByText since the section header contains "Character References"
+    expect(screen.getAllByText(/Character References/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Aspect Ratio/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /generate storyboard/i })).toBeInTheDocument();
   });
@@ -91,10 +115,11 @@ describe('InputForm', () => {
     });
   });
 
-  it('should handle reference image file upload', async () => {
+  it('should handle style reference image file upload', async () => {
     const { fileToBase64 } = require('@/utils/imageUtils');
     render(<InputForm {...defaultProps} />);
 
+    // Find the style reference input (first image input)
     const imageInput = screen.getAllByRole('textbox')[0].closest('form')?.querySelector('input[type="file"][accept="image/*"]');
     const mockFile = new File(['image content'], 'test.jpg', { type: 'image/jpeg' });
 
@@ -111,7 +136,11 @@ describe('InputForm', () => {
 
     await waitFor(() => {
       expect(fileToBase64).toHaveBeenCalledWith(mockFile);
-      expect(mockOnSubmit).toHaveBeenCalledWith('Test', undefined, ['base64data']);
+      // Now expects ReferenceImages format with style array and empty characters
+      expect(mockOnSubmit).toHaveBeenCalledWith('Test', undefined, {
+        style: ['base64data'],
+        characters: []
+      });
     });
   });
 
