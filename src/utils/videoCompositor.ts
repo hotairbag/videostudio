@@ -170,7 +170,9 @@ export const composeAndExportVideo = async (
     const startTime = performance.now();
 
     let animationFrameId: number;
-    let lastSceneId: number | null = null;
+    let lastSceneIndex: number = -1;
+    // Track which scenes have already played their video (to prevent looping)
+    const sceneVideoPlayed = new Set<number>();
 
     const renderLoop = () => {
       const now = (performance.now() - startTime) / 1000;
@@ -195,8 +197,14 @@ export const composeAndExportVideo = async (
         return;
       }
 
-      // Switch scene audio: unmute current, mute others
-      if (currentScene.id !== lastSceneId) {
+      // Detect scene change
+      const sceneChanged = sceneIndex !== lastSceneIndex;
+      if (sceneChanged) {
+        lastSceneIndex = sceneIndex;
+        // Reset the "played" flag for this scene so it can play
+        // (in case we're re-entering a scene, though unlikely in linear playback)
+
+        // Switch scene audio: unmute current, mute others
         for (const [idStr, audioData] of Object.entries(videoAudioSources)) {
           const id = Number(idStr);
           if (id === currentScene.id) {
@@ -205,25 +213,33 @@ export const composeAndExportVideo = async (
             audioData.gain.gain.setValueAtTime(0, audioCtx.currentTime);
           }
         }
-        lastSceneId = currentScene.id;
+
+        // Pause all other videos and start the current one
+        Object.entries(videoElements).forEach(([idStr, v]) => {
+          const id = Number(idStr);
+          if (id !== currentScene.id && !v.paused) {
+            v.pause();
+          }
+        });
       }
 
       const vid = videoElements[currentScene.id];
       if (vid) {
-        if (vid.paused) {
-          // Reset video to start if it ended
-          if (vid.ended) {
-            vid.currentTime = 0;
-          }
+        // Only start the video if it hasn't played for this scene yet
+        if (vid.paused && !sceneVideoPlayed.has(sceneIndex)) {
+          vid.currentTime = 0; // Always start from beginning when entering a new scene
           vid.play().catch((err) => {
             console.warn('Video play failed:', err);
           });
-          // Pause other videos
-          Object.values(videoElements).forEach(v => {
-            if (v !== vid && !v.paused) v.pause();
-          });
         }
-        // Draw video frame to canvas
+
+        // Mark as played when video ends (don't restart it)
+        if (vid.ended && !sceneVideoPlayed.has(sceneIndex)) {
+          sceneVideoPlayed.add(sceneIndex);
+          // Keep the last frame displayed - don't do anything, just let drawImage use the last frame
+        }
+
+        // Draw video frame to canvas (works even when paused/ended - shows last frame)
         try {
           ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
         } catch (err) {

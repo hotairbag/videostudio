@@ -7,7 +7,7 @@ import { Id, Doc } from '../../convex/_generated/dataModel';
 import InputForm from '@/components/InputForm';
 import Storyboard from '@/components/Storyboard';
 import Production from '@/components/Production';
-import { generateScript, generateStoryboard, generateStoryboard2, generateMasterAudio, setApiKey, getApiKey } from '@/services/geminiService';
+import { generateScript, generateStoryboard, generateStoryboard2, generateMasterAudio, generateVideoForScene, setApiKey, getApiKey } from '@/services/geminiService';
 import { sliceGridImage, sliceGrid3x2Image } from '@/utils/imageUtils';
 import { useTaskPolling, useStartVideoTask, useStartMusicTask } from '@/hooks/useTaskPolling';
 import { AspectRatio, VideoModel, SeedanceResolution, SeedanceSceneCount, Script, VoiceMode, Character, DialogueLine, ReferenceImages } from '@/types';
@@ -47,9 +47,23 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
   const updateProjectStatus = useMutation(api.projects.updateStatus);
   const updateProject = useMutation(api.projects.update);
   const createAudioTrack = useMutation(api.audioTracks.create);
+  const createVideo = useMutation(api.videos.create);
 
-  // Task polling hooks
-  useTaskPolling(projectId);
+  // Task polling hooks - get pending tasks to track async generation status
+  const { pendingTasks } = useTaskPolling(projectId);
+
+  // Check if music is currently generating (async task pending)
+  const hasPendingMusicTask = pendingTasks.some(t => t.taskType === 'music_suno');
+
+  // Get scene IDs that have pending video tasks (for Seedance)
+  const pendingVideoSceneIds = pendingTasks
+    .filter(t => t.taskType === 'video_seedance' && t.sceneId)
+    .map(t => {
+      // Get the scene number from the scene ID
+      const scene = scenes?.find(s => s._id === t.sceneId);
+      return scene?.sceneNumber ?? 0;
+    })
+    .filter(id => id > 0);
 
   // Helper to upload base64 image to R2 and get URL
   const uploadImageToR2 = async (base64Image: string): Promise<string> => {
@@ -64,6 +78,31 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
     const { urls } = await response.json();
     return urls[0];
   };
+
+  // Helper to upload video blob URL to R2 and get persistent URL
+  const uploadVideoToR2 = async (blobUrl: string, sceneId: number): Promise<string> => {
+    // Fetch the blob from the blob URL
+    const blobResponse = await fetch(blobUrl);
+    const blob = await blobResponse.blob();
+
+    // Use FormData to send binary data directly (preserves audio better than base64)
+    const formData = new FormData();
+    formData.append('video', blob, `scene_${sceneId}.mp4`);
+    formData.append('sceneId', String(sceneId));
+
+    // Upload to R2
+    const response = await fetch('/api/upload/video', {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to upload video to R2: ${error}`);
+    }
+    const { url } = await response.json();
+    return url;
+  };
+
   const { startSeedanceVideo } = useStartVideoTask(projectId);
   const { startMusic } = useStartMusicTask(projectId);
 
@@ -364,29 +403,57 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
     const sceneIndex = fullScript.scenes.findIndex(s => s.id === sceneId);
     if (sceneIndex === -1) return;
 
-    const scene = scenes[sceneIndex];
+    const convexScene = scenes[sceneIndex];
     const frame = frames[sceneIndex];
-    if (!scene || !frame) return;
+    if (!convexScene || !frame) return;
 
+    const sceneData = fullScript.scenes[sceneIndex];
     setGeneratingVideoIds(prev => [...prev, sceneId]);
 
     try {
-      await startSeedanceVideo(
-        scene._id,
-        fullScript.scenes[sceneIndex].visualDescription + ' ' + (fullScript.scenes[sceneIndex].cameraShot || ''),
-        frame.imageUrl,
-        project.aspectRatio as '16:9' | '9:16',
-        project.seedanceResolution as '480p' | '720p',
-        project.seedanceAudio
-      );
-      // Video will be tracked by the polling hook
+      if (project.videoModel === 'veo-3.1') {
+        // Veo: Generate video directly via Gemini SDK
+        const blobUrl = await generateVideoForScene(
+          sceneData,
+          frame.imageUrl,
+          project.aspectRatio as AspectRatio,
+          'veo-3.1',
+          project.seedanceResolution as SeedanceResolution,
+          project.seedanceAudio,
+          (project.voiceMode ?? 'tts') as VoiceMode,
+          fullScript.characters
+        );
+
+        // Upload blob to R2 for persistent storage
+        const r2Url = await uploadVideoToR2(blobUrl, sceneId);
+
+        // Save video record in Convex
+        await createVideo({
+          projectId,
+          sceneId: convexScene._id,
+          videoUrl: r2Url,
+          duration: 8, // Veo generates 8-second clips
+          status: 'completed',
+        });
+      } else {
+        // Seedance: Use task-based async generation
+        await startSeedanceVideo(
+          convexScene._id,
+          sceneData.visualDescription + ' ' + (sceneData.cameraShot || ''),
+          frame.imageUrl,
+          project.aspectRatio as '16:9' | '9:16',
+          project.seedanceResolution as '480p' | '720p',
+          project.seedanceAudio
+        );
+        // Video will be tracked by the polling hook
+      }
     } catch (error) {
       console.error(error);
-      alert(`Failed to start video generation for scene ${sceneId}`);
+      alert(`Failed to generate video for scene ${sceneId}`);
     } finally {
       setGeneratingVideoIds(prev => prev.filter(id => id !== sceneId));
     }
-  }, [fullScript, scenes, frames, startSeedanceVideo, project]);
+  }, [fullScript, scenes, frames, startSeedanceVideo, project, projectId, createVideo]);
 
   const handleGenerateAudio = async () => {
     if (!fullScript) return;
@@ -508,16 +575,43 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
 
         if (convexScene && frame) {
           try {
-            await startSeedanceVideo(
-              convexScene._id,
-              scene.visualDescription + ' ' + (scene.cameraShot || ''),
-              frame.imageUrl,
-              project.aspectRatio as '16:9' | '9:16',
-              project.seedanceResolution as '480p' | '720p',
-              project.seedanceAudio
-            );
+            if (project.videoModel === 'veo-3.1') {
+              // Veo: Generate video directly via Gemini SDK
+              const blobUrl = await generateVideoForScene(
+                scene,
+                frame.imageUrl,
+                project.aspectRatio as AspectRatio,
+                'veo-3.1',
+                project.seedanceResolution as SeedanceResolution,
+                project.seedanceAudio,
+                (project.voiceMode ?? 'tts') as VoiceMode,
+                fullScript.characters
+              );
+
+              // Upload blob to R2 for persistent storage
+              const r2Url = await uploadVideoToR2(blobUrl, scene.id);
+
+              // Save video record in Convex
+              await createVideo({
+                projectId,
+                sceneId: convexScene._id,
+                videoUrl: r2Url,
+                duration: 8, // Veo generates 8-second clips
+                status: 'completed',
+              });
+            } else {
+              // Seedance: Use task-based async generation
+              await startSeedanceVideo(
+                convexScene._id,
+                scene.visualDescription + ' ' + (scene.cameraShot || ''),
+                frame.imageUrl,
+                project.aspectRatio as '16:9' | '9:16',
+                project.seedanceResolution as '480p' | '720p',
+                project.seedanceAudio
+              );
+            }
           } catch (err) {
-            console.error(`Failed to start video for scene ${scene.id}`, err);
+            console.error(`Failed to generate video for scene ${scene.id}`, err);
           }
         }
       }
@@ -769,11 +863,11 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
             script={fullScript}
             frames={frameUrls}
             generatedVideos={generatedVideos}
-            generatingVideoIds={generatingVideoIds}
+            generatingVideoIds={[...generatingVideoIds, ...pendingVideoSceneIds]}
             masterAudioUrl={masterAudioUrl}
             backgroundMusicUrl={backgroundMusicUrl}
             isGeneratingAudio={isGeneratingAudio}
-            isGeneratingMusic={isGeneratingMusic}
+            isGeneratingMusic={isGeneratingMusic || hasPendingMusicTask}
             isGeneratingFullMovie={isGeneratingFullMovie}
             onGenerateVideo={handleGenerateVideo}
             onGenerateFullMovie={handleGenerateFullMovie}

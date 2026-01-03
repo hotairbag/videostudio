@@ -732,13 +732,50 @@ const buildDialoguePrompt = (scene: Scene, characters?: Character[]): string => 
 // Generate video using Veo API
 const generateVeoVideo = async (
   scene: Scene,
-  startFrameBase64: string,
+  startFrameInput: string,
   aspectRatio: AspectRatio,
   voiceMode: VoiceMode = 'tts',
   characters?: Character[]
 ): Promise<string> => {
   const ai = getClient();
-  const cleanBase64 = startFrameBase64.split(',')[1] || startFrameBase64;
+
+  // Handle both URLs and base64 data
+  let cleanBase64: string;
+  let imageMimeType = 'image/png';
+
+  if (startFrameInput.startsWith('http://') || startFrameInput.startsWith('https://')) {
+    // Fetch image from URL and convert to base64
+    // Use proxy for R2 URLs to avoid CORS issues
+    const fetchUrl = startFrameInput.startsWith('https://video-studio.jarwater.com/')
+      ? `/api/proxy-image?url=${encodeURIComponent(startFrameInput)}`
+      : startFrameInput;
+    console.log('[Veo] Fetching frame from URL:', startFrameInput, 'via:', fetchUrl);
+    const response = await fetch(fetchUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch frame image: ${response.status}`);
+    }
+    const blob = await response.blob();
+    // Get actual mime type from blob
+    imageMimeType = blob.type || 'image/png';
+    console.log('[Veo] Image blob type:', imageMimeType, 'size:', blob.size);
+
+    const arrayBuffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    // Convert to base64
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    cleanBase64 = btoa(binary);
+    console.log('[Veo] Converted URL to base64, length:', cleanBase64.length);
+  } else {
+    // Already base64 - strip data URL prefix if present
+    if (startFrameInput.startsWith('data:')) {
+      const mimeMatch = startFrameInput.match(/data:([^;]+);/);
+      if (mimeMatch) imageMimeType = mimeMatch[1];
+    }
+    cleanBase64 = startFrameInput.split(',')[1] || startFrameInput;
+  }
 
   // Build audio instructions based on voice mode
   let audioInstructions: string;
@@ -765,31 +802,40 @@ const generateVeoVideo = async (
     `;
   }
 
-  let operation = await ai.models.generateVideos({
-    model: 'veo-3.1-fast-generate-preview',
-    prompt: `
-      Visuals: ${scene.visualDescription}.
-      Audio Atmosphere: ${scene.audioDescription}.
-      ${dialoguePrompt}
+  console.log(`[Veo] Starting video generation for scene ${scene.id}, base64 length: ${cleanBase64.length}`);
 
-      PACING INSTRUCTION: The output video will be ~8 seconds long (fixed).
-      This scene is exactly 8 seconds.
-      CRITICAL: Ensure the primary action described happens IMMEDIATELY and concludes efficiently. Do not pad the start with static frames.
+  let operation;
+  try {
+    operation = await ai.models.generateVideos({
+      model: 'veo-3.1-fast-generate-preview',
+      prompt: `
+        Visuals: ${scene.visualDescription}.
+        Audio Atmosphere: ${scene.audioDescription}.
+        ${dialoguePrompt}
 
-      ${audioInstructions}
+        PACING INSTRUCTION: The output video will be ~8 seconds long (fixed).
+        This scene is exactly 8 seconds.
+        CRITICAL: Ensure the primary action described happens IMMEDIATELY and concludes efficiently. Do not pad the start with static frames.
 
-      Cinematic lighting, consistent style with input image.
-    `,
-    image: {
-      imageBytes: cleanBase64,
-      mimeType: 'image/png'
-    },
-    config: {
-      numberOfVideos: 1,
-      resolution: '720p',
-      aspectRatio: aspectRatio
-    }
-  });
+        ${audioInstructions}
+
+        Cinematic lighting, consistent style with input image.
+      `,
+      image: {
+        imageBytes: cleanBase64,
+        mimeType: imageMimeType
+      },
+      config: {
+        numberOfVideos: 1,
+        resolution: '720p',
+        aspectRatio: aspectRatio
+      }
+    });
+    console.log(`[Veo] Video generation started for scene ${scene.id}, operation:`, operation.name);
+  } catch (apiError) {
+    console.error(`[Veo] API call failed for scene ${scene.id}:`, apiError);
+    throw apiError;
+  }
 
   while (!operation.done) {
     await new Promise(resolve => setTimeout(resolve, 5000));
