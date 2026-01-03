@@ -436,13 +436,8 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
     if (!fullScript) return;
     setIsGeneratingMusic(true);
     try {
-      const theme = fullScript.scenes
-        .slice(0, 3)
-        .map(s => s.visualDescription)
-        .join(' ')
-        .substring(0, 200);
-
-      await startMusic(fullScript.title, fullScript.style, theme);
+      // Pass full scenes for better music context
+      await startMusic(fullScript.title, fullScript.style, fullScript.scenes);
       // Music will be tracked by the polling hook
       setIsGeneratingMusic(false);
     } catch (error) {
@@ -496,12 +491,7 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
       if (!backgroundMusicUrl) {
         setIsGeneratingMusic(true);
         try {
-          const theme = fullScript.scenes
-            .slice(0, 3)
-            .map(s => s.visualDescription)
-            .join(' ')
-            .substring(0, 200);
-          await startMusic(fullScript.title, fullScript.style, theme);
+          await startMusic(fullScript.title, fullScript.style, fullScript.scenes);
         } catch (err) {
           console.warn("Music gen failed", err);
         }
@@ -793,6 +783,9 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
             aspectRatio={project.aspectRatio as AspectRatio}
             videoModel={project.videoModel as VideoModel}
             voiceMode={project.voiceMode as VoiceMode}
+            enableCuts={project.enableCuts}
+            seedanceAudio={project.seedanceAudio}
+            seedanceResolution={project.seedanceResolution}
           />
         )}
       </main>

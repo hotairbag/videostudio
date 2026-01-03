@@ -20,6 +20,10 @@ interface ProductionProps {
   aspectRatio: AspectRatio;
   videoModel: VideoModel;
   voiceMode: VoiceMode;
+  // Additional settings to display
+  enableCuts?: boolean;
+  seedanceAudio?: boolean;
+  seedanceResolution?: string;
 }
 
 // Video duration per clip based on model
@@ -269,7 +273,10 @@ const Production: React.FC<ProductionProps> = ({
   onBackToStoryboard,
   aspectRatio,
   videoModel,
-  voiceMode
+  voiceMode,
+  enableCuts,
+  seedanceAudio,
+  seedanceResolution,
 }) => {
   const clipDuration = CLIP_DURATION_BY_MODEL[videoModel];
   const isSeedance = videoModel === 'seedance-1.5';
@@ -372,6 +379,33 @@ const Production: React.FC<ProductionProps> = ({
             <div className="flex items-center gap-2 text-sm text-neutral-400">
               <span className="bg-neutral-800 px-2 py-0.5 rounded border border-neutral-700">{script.style}</span>
               <span>• {totalScenes} Scenes</span>
+            </div>
+            {/* Settings display */}
+            <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
+              <span className="bg-blue-900/30 text-blue-400 px-2 py-0.5 rounded border border-blue-800">
+                {aspectRatio}
+              </span>
+              <span className="bg-purple-900/30 text-purple-400 px-2 py-0.5 rounded border border-purple-800">
+                {videoModel === 'veo-3.1' ? 'Veo 3.1' : 'Seedance 1.5'}
+              </span>
+              <span className="bg-green-900/30 text-green-400 px-2 py-0.5 rounded border border-green-800">
+                {voiceMode === 'tts' ? 'TTS Audio' : 'Speech in Video'}
+              </span>
+              {videoModel === 'veo-3.1' && (
+                <span className={`px-2 py-0.5 rounded border ${enableCuts ? 'bg-orange-900/30 text-orange-400 border-orange-800' : 'bg-neutral-800 text-neutral-500 border-neutral-700'}`}>
+                  {enableCuts ? 'Cuts Enabled' : 'Single Shot'}
+                </span>
+              )}
+              {videoModel === 'seedance-1.5' && (
+                <>
+                  <span className="bg-neutral-800 text-neutral-400 px-2 py-0.5 rounded border border-neutral-700">
+                    {seedanceResolution || '480p'}
+                  </span>
+                  <span className={`px-2 py-0.5 rounded border ${seedanceAudio ? 'bg-cyan-900/30 text-cyan-400 border-cyan-800' : 'bg-neutral-800 text-neutral-500 border-neutral-700'}`}>
+                    {seedanceAudio ? 'SFX On' : 'SFX Off'}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -546,7 +580,7 @@ const Production: React.FC<ProductionProps> = ({
                 )}
 
                 <div className="absolute top-2 left-2 bg-black/80 text-white text-[10px] px-2 py-0.5 rounded border border-neutral-600">
-                  Scene {index + 1}{scene.cameraShot ? ` • ${scene.cameraShot}` : ''}{scene.timeRange ? ` • ${parseDuration(scene.timeRange)}s` : ''}
+                  Scene {index + 1}{scene.cameraShot ? ` • ${scene.cameraShot}` : ''} • {clipDuration}s
                 </div>
               </div>
 

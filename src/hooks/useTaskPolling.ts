@@ -232,17 +232,17 @@ export function useStartMusicTask(projectId: Id<'projects'> | undefined) {
   const startMusic = useCallback(async (
     title: string,
     style: string,
-    theme?: string
+    scenes?: { visualDescription: string; voiceoverText?: string }[]
   ) => {
     if (!projectId) {
       throw new Error('Project ID is required');
     }
 
-    // Start the music generation
+    // Start the music generation - pass scenes for context
     const response = await fetch('/api/music/generate/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, style, theme }),
+      body: JSON.stringify({ title, style, scenes }),
     });
 
     if (!response.ok) {

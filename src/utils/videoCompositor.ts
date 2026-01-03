@@ -72,8 +72,13 @@ export const composeAndExportVideo = async (
         : url;
       vid.src = proxyUrl;
       vid.playsInline = true;
+      vid.preload = "auto";
+      // Note: Do NOT mute - we capture audio via MediaElementAudioSourceNode
       vid.oncanplaythrough = () => resolve(vid);
-      vid.onerror = (e) => reject(e);
+      vid.onerror = (e) => {
+        console.error(`Failed to load video ${id}:`, e);
+        reject(e);
+      };
       vid.load();
     });
   };
@@ -206,12 +211,26 @@ export const composeAndExportVideo = async (
       const vid = videoElements[currentScene.id];
       if (vid) {
         if (vid.paused) {
-          vid.play().catch(() => {});
+          // Reset video to start if it ended
+          if (vid.ended) {
+            vid.currentTime = 0;
+          }
+          vid.play().catch((err) => {
+            console.warn('Video play failed:', err);
+          });
+          // Pause other videos
           Object.values(videoElements).forEach(v => {
-            if (v !== vid) v.pause();
+            if (v !== vid && !v.paused) v.pause();
           });
         }
-        ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
+        // Draw video frame to canvas
+        try {
+          ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
+        } catch (err) {
+          console.warn('drawImage failed:', err);
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
       } else {
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
