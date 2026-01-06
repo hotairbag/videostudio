@@ -36,11 +36,13 @@ interface InputFormProps {
   onBackgroundMusicEnabledChange: (enabled: boolean) => void;
 }
 
-// Cost estimates for Seedance via BytePlus (approximate, with 50% offline discount)
+// Cost estimates for Seedance via BytePlus (flex/offline pricing with 50% discount)
+// Based on: $0.6/M tokens (no audio) and $1.2/M tokens (with audio)
+// Token consumption: ~330K tokens per 4s 720p video
 const SEEDANCE_COSTS = {
-  basePer4s: 0.025, // Base cost per 4s at 720p without audio (offline pricing)
-  audioMultiplier: 1.5, // +50% for audio generation
-  resolution480p: 0.7, // 30% cheaper for 480p
+  basePer4s: 0.20, // Base cost per 4s at 720p without audio (flex pricing)
+  audioMultiplier: 2, // 2x for audio generation ($1.2 vs $0.6 per M tokens)
+  resolution480p: 0.5, // 50% cheaper for 480p (half the pixels = half tokens)
   durationMultiplier: { 4: 1, 8: 2, 12: 3 } as Record<number, number>,
 };
 
