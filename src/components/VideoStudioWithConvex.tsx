@@ -535,7 +535,9 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
           project.seedanceResolution as SeedanceResolution,
           project.seedanceAudio,
           (project.voiceMode ?? 'tts') as VoiceMode,
-          fullScript.characters
+          fullScript.characters,
+          fullScript.style,
+          project.language ?? 'english'
         );
 
         // Upload blob to R2 for persistent storage
@@ -708,7 +710,9 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
                 project.seedanceResolution as SeedanceResolution,
                 project.seedanceAudio,
                 (project.voiceMode ?? 'tts') as VoiceMode,
-                fullScript.characters
+                fullScript.characters,
+                fullScript.style,
+                project.language ?? 'english'
               );
 
               // Upload blob to R2 for persistent storage

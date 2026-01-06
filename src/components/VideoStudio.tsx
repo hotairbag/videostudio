@@ -43,8 +43,11 @@ export default function VideoStudio() {
     videoModel: 'veo-3.1',
     seedanceAudio: false,
     seedanceResolution: '720p',
+    seedanceDuration: 4,
     voiceMode: 'tts',
     multiCharacter: false,
+    language: 'english',
+    backgroundMusicEnabled: true,
   });
 
   const [seedanceSceneCount, setSeedanceSceneCount] = useState<SeedanceSceneCount>(15);
@@ -267,7 +270,8 @@ export default function VideoStudio() {
         state.seedanceAudio,
         state.voiceMode,
         state.script?.characters,
-        state.script?.style // Pass style for Seedance prompts
+        state.script?.style, // Pass style for Seedance prompts
+        state.language // Pass language for dialogue in videos
       );
       setState(prev => ({
         ...prev,
@@ -421,7 +425,8 @@ export default function VideoStudio() {
                 state.seedanceAudio,
                 state.voiceMode,
                 state.script?.characters,
-                state.script?.style // Pass style for Seedance prompts
+                state.script?.style, // Pass style for Seedance prompts
+                state.language // Pass language for dialogue in videos
               );
               setState(prev => ({
                 ...prev,

@@ -727,12 +727,17 @@ const buildSeedancePrompt = (
   scene: Scene,
   style: string,
   voiceMode: VoiceMode,
-  characters?: Character[]
+  characters?: Character[],
+  language: string = 'english'
 ): string => {
   const parts: string[] = [];
+  const languageUpper = language.toUpperCase();
 
-  // Language directive - CRITICAL for preventing Chinese (Seedance is ByteDance model)
-  parts.push('[LANGUAGE: ENGLISH ONLY - No Chinese text, signs, or dialogue]');
+  // Language directive - CRITICAL for preventing unwanted languages (Seedance is ByteDance model)
+  const languageDirective = language === 'english'
+    ? '[LANGUAGE: ENGLISH ONLY - No Chinese text, signs, or dialogue]'
+    : `[LANGUAGE: ${languageUpper} - All dialogue and on-screen text must be in ${languageUpper}. No Chinese unless ${language} is Chinese.]`;
+  parts.push(languageDirective);
 
   // Art Style reference
   if (style) {
@@ -748,15 +753,15 @@ const buildSeedancePrompt = (
     parts.push(`Audio Atmosphere: ${scene.audioDescription}`);
   }
 
-  // Audio mode instructions
+  // Audio mode instructions with correct language
   const audioInstruction = voiceMode === 'speech_in_video'
-    ? 'AUDIO: Include ambient sound effects matching the scene. Characters speak dialogue in ENGLISH only. ABSOLUTELY NO BACKGROUND MUSIC - music will be added in post-production.'
+    ? `AUDIO: Include ambient sound effects matching the scene. Characters speak dialogue in ${languageUpper} only. ABSOLUTELY NO BACKGROUND MUSIC - music will be added in post-production.`
     : 'AUDIO: Include ambient sound effects only. NO DIALOGUE OR SPEECH. ABSOLUTELY NO BACKGROUND MUSIC - music will be added in post-production.';
   parts.push(audioInstruction);
 
   // Add dialogue for speech-in-video mode
   if (voiceMode === 'speech_in_video') {
-    const dialogueSection = buildDialoguePrompt(scene, characters);
+    const dialogueSection = buildDialoguePrompt(scene, characters, language);
     if (dialogueSection) {
       parts.push(dialogueSection);
     }
@@ -774,7 +779,8 @@ const generateSeedanceVideo = async (
   generateAudio: boolean,
   voiceMode: VoiceMode = 'tts',
   characters?: Character[],
-  style?: string
+  style?: string,
+  language: string = 'english'
 ): Promise<string> => {
   // First, upload the image to R2 to get a public URL
   const uploadRes = await fetch('/api/upload', {
@@ -792,7 +798,7 @@ const generateSeedanceVideo = async (
   const imageUrl = urls[0];
 
   // Build prompt following Seedance 1.5 Pro guide structure
-  const prompt = buildSeedancePrompt(scene, style || '', voiceMode, characters);
+  const prompt = buildSeedancePrompt(scene, style || '', voiceMode, characters, language);
 
   // Call Seedance API
   const seedanceRes = await fetch('/api/video/seedance', {
@@ -820,11 +826,13 @@ const generateSeedanceVideo = async (
  * Build dialogue prompt section for speech-in-video mode
  * Following Seedance 1.5 Pro guide format with emotional state, tone, and pace
  */
-const buildDialoguePrompt = (scene: Scene, characters?: Character[]): string => {
+const buildDialoguePrompt = (scene: Scene, characters?: Character[], language: string = 'english'): string => {
+  const languageUpper = language.toUpperCase();
+
   if (!scene.dialogue || scene.dialogue.length === 0) {
     // Fallback to voiceoverText if no dialogue
     if (scene.voiceoverText?.trim()) {
-      return `VOICEOVER (speak in English with a calm, clear voice): "${scene.voiceoverText}"`;
+      return `VOICEOVER (speak in ${languageUpper} with a calm, clear voice): "${scene.voiceoverText}"`;
     }
     return '';
   }
@@ -855,7 +863,7 @@ const buildDialoguePrompt = (scene: Scene, characters?: Character[]): string => 
     return `${line.speaker}${profileHint}: "${line.text}"`;
   }).join('\n');
 
-  return `ENGLISH DIALOGUE:
+  return `${languageUpper} DIALOGUE:
 ${dialogueLines}`;
 };
 
@@ -865,9 +873,11 @@ const generateVeoVideo = async (
   startFrameInput: string,
   aspectRatio: AspectRatio,
   voiceMode: VoiceMode = 'tts',
-  characters?: Character[]
+  characters?: Character[],
+  language: string = 'english'
 ): Promise<string> => {
   const ai = getClient();
+  const languageUpper = language.toUpperCase();
 
   // Handle both URLs and base64 data
   let cleanBase64: string;
@@ -912,13 +922,13 @@ const generateVeoVideo = async (
   let dialoguePrompt = '';
 
   if (voiceMode === 'speech_in_video') {
-    dialoguePrompt = buildDialoguePrompt(scene, characters);
+    dialoguePrompt = buildDialoguePrompt(scene, characters, language);
     audioInstructions = `
       AUDIO INSTRUCTIONS:
       - Include ambient sound effects matching the scene atmosphere (wind, footsteps, environment sounds, etc.)
       - ABSOLUTELY NO BACKGROUND MUSIC - we will add our own music track in post-production.
       - NO musical score, NO soundtrack, NO instrumental music of any kind.
-      - CRITICAL: All dialogue MUST be spoken in ENGLISH language only. Do NOT use any other language.
+      - CRITICAL: All dialogue MUST be spoken in ${languageUpper} language only. Do NOT use any other language.
       - Characters should speak the provided dialogue naturally with their described voice characteristics.
       - Ensure lip sync matches the spoken words.
     `;
@@ -1016,13 +1026,14 @@ export const generateVideoForScene = async (
   seedanceAudio: boolean = false,
   voiceMode: VoiceMode = 'tts',
   characters?: Character[],
-  style?: string // Art style for Seedance prompts
+  style?: string, // Art style for Seedance prompts
+  language: string = 'english' // Language for dialogue in videos
 ): Promise<string> => {
   try {
     if (videoModel === 'seedance-1.5') {
-      return await generateSeedanceVideo(scene, startFrameBase64, aspectRatio, seedanceResolution, seedanceAudio, voiceMode, characters, style);
+      return await generateSeedanceVideo(scene, startFrameBase64, aspectRatio, seedanceResolution, seedanceAudio, voiceMode, characters, style, language);
     } else {
-      return await generateVeoVideo(scene, startFrameBase64, aspectRatio, voiceMode, characters);
+      return await generateVeoVideo(scene, startFrameBase64, aspectRatio, voiceMode, characters, language);
     }
   } catch (error) {
     handleApiError(error, `Video generation for scene ${scene.id}`);
