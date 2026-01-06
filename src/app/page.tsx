@@ -39,12 +39,15 @@ export default function Home() {
         title: `Untitled Project`,
         style: 'cinematic',
         originalPrompt: '',
-        aspectRatio: '16:9',
+        aspectRatio: '9:16',
         videoModel: 'seedance-1.5',
         enableCuts: true,
         seedanceAudio: false,
-        seedanceResolution: '720p',
+        seedanceResolution: '480p',
+        seedanceDuration: 4,
         seedanceSceneCount: 15,
+        voiceMode: 'speech_in_video',
+        backgroundMusicEnabled: true,
       });
 
       router.push(`/project/${projectId}`);
