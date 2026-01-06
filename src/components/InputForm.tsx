@@ -202,7 +202,7 @@ const InputForm: React.FC<InputFormProps> = ({
   return (
     <div className="max-w-2xl mx-auto">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Main Prompt Input */}
+        {/* Prompt Input Box */}
         <div className="bg-neutral-800/50 rounded-2xl border border-neutral-700 overflow-hidden">
           <textarea
             value={prompt}
@@ -214,14 +214,14 @@ const InputForm: React.FC<InputFormProps> = ({
           />
 
           {/* Attached files preview */}
-          {(styleRefs.length > 0 || characterRefs.some(c => c.files.length > 0) || refVideo) && (
-            <div className="px-4 pb-2 flex flex-wrap gap-2">
+          {(styleRefs.length > 0 || refVideo) && (
+            <div className="px-4 pb-3 flex flex-wrap gap-2">
               {refVideo && (
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-900/30 border border-blue-700/50 rounded-full text-sm">
                   <svg className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14V10z" />
                   </svg>
-                  <span className="text-blue-300">{refVideo.name}</span>
+                  <span className="text-blue-300 truncate max-w-[150px]">{refVideo.name}</span>
                   <button type="button" onClick={() => setRefVideo(null)} className="text-blue-400 hover:text-blue-300">×</button>
                 </div>
               )}
@@ -236,381 +236,381 @@ const InputForm: React.FC<InputFormProps> = ({
               ))}
             </div>
           )}
+        </div>
 
-          {/* Bottom toolbar */}
-          <div className="px-3 py-2 border-t border-neutral-700/50 flex items-center gap-2 flex-wrap">
-            {/* Hidden file inputs */}
-            <input ref={styleInputRef} type="file" accept="image/*" multiple onChange={handleStyleRefChange} className="hidden" />
-            <input ref={videoInputRef} type="file" accept="video/*" onChange={(e) => setRefVideo(e.target.files?.[0] || null)} className="hidden" />
+        {/* Toolbar - OUTSIDE the overflow:hidden container */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Hidden file inputs */}
+          <input ref={styleInputRef} type="file" accept="image/*" multiple onChange={handleStyleRefChange} className="hidden" />
+          <input ref={videoInputRef} type="file" accept="video/*" onChange={(e) => setRefVideo(e.target.files?.[0] || null)} className="hidden" />
 
-            {/* Add Style button */}
+          {/* Add Style button */}
+          <button
+            type="button"
+            onClick={() => styleInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-neutral-400 hover:text-white hover:bg-neutral-700/50 rounded-full transition-colors border border-neutral-700"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Style
+          </button>
+
+          {/* Add Character button */}
+          <button
+            type="button"
+            onClick={addCharacter}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-neutral-400 hover:text-white hover:bg-neutral-700/50 rounded-full transition-colors border border-neutral-700"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Character
+          </button>
+
+          {/* Add Video button */}
+          <button
+            type="button"
+            onClick={() => videoInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-neutral-400 hover:text-white hover:bg-neutral-700/50 rounded-full transition-colors border border-neutral-700"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Video Ref
+          </button>
+
+          <div className="flex-1" />
+
+          {/* Model selector */}
+          <div ref={modelRef} className="relative">
             <button
               type="button"
-              onClick={() => styleInputRef.current?.click()}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-neutral-400 hover:text-white hover:bg-neutral-700/50 rounded-full transition-colors"
+              onClick={() => { setShowModelPicker(!showModelPicker); setShowSettings(false); }}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-neutral-800 hover:bg-neutral-700 rounded-full transition-colors border border-neutral-700"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              <span className={`w-2 h-2 rounded-full ${isSeedance ? 'bg-purple-500' : 'bg-blue-500'}`} />
+              <span className="text-neutral-200">{isSeedance ? 'Seedance' : 'Veo 3.1'}</span>
+              <svg className={`w-3 h-3 text-neutral-400 transition-transform ${showModelPicker ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
-              Style
             </button>
 
-            {/* Add Character button */}
+            {showModelPicker && (
+              <div className="absolute top-full mt-2 right-0 w-56 bg-neutral-800 border border-neutral-700 rounded-xl shadow-2xl overflow-hidden z-[100]">
+                <button
+                  type="button"
+                  onClick={() => { onVideoModelChange('seedance-1.5'); setShowModelPicker(false); }}
+                  className={`w-full px-4 py-3 text-left hover:bg-neutral-700/50 transition-colors ${isSeedance ? 'bg-purple-900/30' : ''}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-white">Seedance 1.5</span>
+                    {isSeedance && <svg className="w-4 h-4 text-purple-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-0.5">Best for stylized & animated</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { onVideoModelChange('veo-3.1'); setShowModelPicker(false); }}
+                  className={`w-full px-4 py-3 text-left hover:bg-neutral-700/50 transition-colors ${!isSeedance ? 'bg-blue-900/30' : ''}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-white">Veo 3.1</span>
+                    {!isSeedance && <svg className="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-0.5">Best for natural & realistic</p>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Settings button */}
+          <div ref={settingsRef} className="relative">
             <button
               type="button"
-              onClick={addCharacter}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-neutral-400 hover:text-white hover:bg-neutral-700/50 rounded-full transition-colors"
+              onClick={() => { setShowSettings(!showSettings); setShowModelPicker(false); }}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-neutral-800 hover:bg-neutral-700 rounded-full transition-colors border border-neutral-700"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              <span className="text-neutral-200">{seedanceResolution}</span>
+              <span className="text-neutral-600">|</span>
+              <span className="text-neutral-200">{aspectRatio}</span>
+              <span className="text-neutral-600">|</span>
+              <span className="text-neutral-200">{isSeedance ? `${seedanceDuration}s` : '8s'}</span>
+              <svg className={`w-4 h-4 text-neutral-400 transition-transform ${showSettings ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
-              Character
             </button>
 
-            {/* Add Video button */}
-            <button
-              type="button"
-              onClick={() => videoInputRef.current?.click()}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-neutral-400 hover:text-white hover:bg-neutral-700/50 rounded-full transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Video Ref
-            </button>
+            {/* Settings Popover */}
+            {showSettings && (
+              <div className="absolute top-full mt-2 right-0 w-80 bg-neutral-800 border border-neutral-700 rounded-xl shadow-2xl p-4 z-[100] max-h-[70vh] overflow-y-auto">
+                <h4 className="text-sm font-semibold text-white mb-3">Settings</h4>
 
-            <div className="flex-1" />
-
-            {/* Model selector */}
-            <div ref={modelRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setShowModelPicker(!showModelPicker)}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-neutral-700/50 hover:bg-neutral-700 rounded-full transition-colors"
-              >
-                <span className={`w-2 h-2 rounded-full ${isSeedance ? 'bg-purple-500' : 'bg-blue-500'}`} />
-                <span className="text-neutral-200">{isSeedance ? 'Seedance' : 'Veo 3.1'}</span>
-                <svg className="w-3 h-3 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {showModelPicker && (
-                <div className="absolute top-full mt-2 right-0 w-56 bg-neutral-800 border border-neutral-700 rounded-xl shadow-xl overflow-hidden z-50">
-                  <button
-                    type="button"
-                    onClick={() => { onVideoModelChange('seedance-1.5'); setShowModelPicker(false); }}
-                    className={`w-full px-4 py-3 text-left hover:bg-neutral-700/50 transition-colors ${isSeedance ? 'bg-purple-900/30' : ''}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-white">Seedance 1.5</span>
-                      {isSeedance && <svg className="w-4 h-4 text-purple-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                    </div>
-                    <p className="text-xs text-neutral-400 mt-0.5">Best for stylized & animated</p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { onVideoModelChange('veo-3.1'); setShowModelPicker(false); }}
-                    className={`w-full px-4 py-3 text-left hover:bg-neutral-700/50 transition-colors ${!isSeedance ? 'bg-blue-900/30' : ''}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-white">Veo 3.1</span>
-                      {!isSeedance && <svg className="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                    </div>
-                    <p className="text-xs text-neutral-400 mt-0.5">Best for natural & realistic</p>
-                  </button>
+                {/* Resolution */}
+                <div className="mb-4">
+                  <label className="text-xs text-neutral-400 mb-2 block">Resolution</label>
+                  <div className="flex gap-2">
+                    {(['720p', '480p'] as const).map((res) => (
+                      <button
+                        key={res}
+                        type="button"
+                        onClick={() => onSeedanceResolutionChange(res)}
+                        className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
+                          seedanceResolution === res
+                            ? 'border-purple-500 bg-purple-900/30 text-white'
+                            : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
+                        }`}
+                      >
+                        {res}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              )}
-            </div>
 
-            {/* Settings button */}
-            <div ref={settingsRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setShowSettings(!showSettings)}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-neutral-700/50 hover:bg-neutral-700 rounded-full transition-colors"
-              >
-                <span className="text-neutral-200">{seedanceResolution}</span>
-                <span className="text-neutral-500">|</span>
-                <span className="text-neutral-200">{aspectRatio}</span>
-                <span className="text-neutral-500">|</span>
-                <span className="text-neutral-200">{isSeedance ? `${seedanceDuration}s` : '8s'}</span>
-                <svg className="w-4 h-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                </svg>
-              </button>
-
-              {/* Settings Popover */}
-              {showSettings && (
-                <div className="absolute top-full mt-2 right-0 w-80 bg-neutral-800 border border-neutral-700 rounded-xl shadow-xl p-4 z-50 max-h-[70vh] overflow-y-auto">
-                  <h4 className="text-sm font-semibold text-white mb-3">Settings</h4>
-
-                  {/* Resolution */}
-                  <div className="mb-4">
-                    <label className="text-xs text-neutral-400 mb-2 block">Resolution</label>
-                    <div className="flex gap-2">
-                      {(['720p', '480p'] as const).map((res) => (
-                        <button
-                          key={res}
-                          type="button"
-                          onClick={() => onSeedanceResolutionChange(res)}
-                          className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
-                            seedanceResolution === res
-                              ? 'border-purple-500 bg-purple-900/30 text-white'
-                              : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
-                          }`}
-                        >
-                          {res}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Aspect Ratio */}
-                  <div className="mb-4">
-                    <label className="text-xs text-neutral-400 mb-2 block">Aspect Ratio</label>
-                    <div className="flex gap-2">
-                      {(['16:9', '9:16'] as const).map((ratio) => (
-                        <button
-                          key={ratio}
-                          type="button"
-                          onClick={() => onAspectRatioChange(ratio)}
-                          className={`flex-1 py-2 text-sm rounded-lg border transition-all flex items-center justify-center gap-2 ${
-                            aspectRatio === ratio
-                              ? 'border-purple-500 bg-purple-900/30 text-white'
-                              : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
-                          }`}
-                        >
-                          <div className={`${ratio === '16:9' ? 'w-5 h-3' : 'w-3 h-5'} border-2 rounded-sm ${
-                            aspectRatio === ratio ? 'border-purple-400' : 'border-neutral-500'
-                          }`} />
-                          {ratio}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Duration (Seedance only) */}
-                  {isSeedance && (
-                    <div className="mb-4">
-                      <label className="text-xs text-neutral-400 mb-2 block">Clip Duration</label>
-                      <div className="flex gap-2">
-                        {([4, 8, 12] as const).map((dur) => (
-                          <button
-                            key={dur}
-                            type="button"
-                            onClick={() => onSeedanceDurationChange(dur)}
-                            className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
-                              seedanceDuration === dur
-                                ? 'border-purple-500 bg-purple-900/30 text-white'
-                                : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
-                            }`}
-                          >
-                            {dur}s
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Scene Count (Seedance only) */}
-                  {isSeedance && (
-                    <div className="mb-4">
-                      <label className="text-xs text-neutral-400 mb-2 block">Scenes</label>
-                      <div className="flex gap-2">
-                        {([9, 15] as const).map((count) => (
-                          <button
-                            key={count}
-                            type="button"
-                            onClick={() => onSeedanceSceneCountChange(count)}
-                            className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
-                              seedanceSceneCount === count
-                                ? 'border-purple-500 bg-purple-900/30 text-white'
-                                : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
-                            }`}
-                          >
-                            {count} scenes
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Sound FX (Seedance only) */}
-                  {isSeedance && (
-                    <div className="mb-4">
-                      <label className="text-xs text-neutral-400 mb-2 block">Sound FX</label>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => onSeedanceAudioChange(false)}
-                          className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
-                            !seedanceAudio
-                              ? 'border-purple-500 bg-purple-900/30 text-white'
-                              : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
-                          }`}
-                        >
-                          Off
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onSeedanceAudioChange(true)}
-                          className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
-                            seedanceAudio
-                              ? 'border-purple-500 bg-purple-900/30 text-white'
-                              : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
-                          }`}
-                        >
-                          On
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Camera Cuts */}
-                  <div className="mb-4">
-                    <label className="text-xs text-neutral-400 mb-2 block">Camera Cuts</label>
-                    <div className="flex gap-2">
+                {/* Aspect Ratio */}
+                <div className="mb-4">
+                  <label className="text-xs text-neutral-400 mb-2 block">Aspect Ratio</label>
+                  <div className="flex gap-2">
+                    {(['16:9', '9:16'] as const).map((ratio) => (
                       <button
+                        key={ratio}
                         type="button"
-                        onClick={() => onEnableCutsChange(true)}
-                        className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
-                          enableCuts
+                        onClick={() => onAspectRatioChange(ratio)}
+                        className={`flex-1 py-2 text-sm rounded-lg border transition-all flex items-center justify-center gap-2 ${
+                          aspectRatio === ratio
                             ? 'border-purple-500 bg-purple-900/30 text-white'
                             : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
                         }`}
                       >
-                        Multi
+                        <div className={`${ratio === '16:9' ? 'w-5 h-3' : 'w-3 h-5'} border-2 rounded-sm ${
+                          aspectRatio === ratio ? 'border-purple-400' : 'border-neutral-500'
+                        }`} />
+                        {ratio}
                       </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Duration (Seedance only) */}
+                {isSeedance && (
+                  <div className="mb-4">
+                    <label className="text-xs text-neutral-400 mb-2 block">Clip Duration</label>
+                    <div className="flex gap-2">
+                      {([4, 8, 12] as const).map((dur) => (
+                        <button
+                          key={dur}
+                          type="button"
+                          onClick={() => onSeedanceDurationChange(dur)}
+                          className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
+                            seedanceDuration === dur
+                              ? 'border-purple-500 bg-purple-900/30 text-white'
+                              : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
+                          }`}
+                        >
+                          {dur}s
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Scene Count (Seedance only) */}
+                {isSeedance && (
+                  <div className="mb-4">
+                    <label className="text-xs text-neutral-400 mb-2 block">Scenes</label>
+                    <div className="flex gap-2">
+                      {([9, 15] as const).map((count) => (
+                        <button
+                          key={count}
+                          type="button"
+                          onClick={() => onSeedanceSceneCountChange(count)}
+                          className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
+                            seedanceSceneCount === count
+                              ? 'border-purple-500 bg-purple-900/30 text-white'
+                              : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
+                          }`}
+                        >
+                          {count} scenes
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sound FX (Seedance only) */}
+                {isSeedance && (
+                  <div className="mb-4">
+                    <label className="text-xs text-neutral-400 mb-2 block">Sound FX</label>
+                    <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => onEnableCutsChange(false)}
+                        onClick={() => onSeedanceAudioChange(false)}
                         className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
-                          !enableCuts
+                          !seedanceAudio
                             ? 'border-purple-500 bg-purple-900/30 text-white'
                             : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
                         }`}
                       >
-                        Single
+                        Off
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onSeedanceAudioChange(true)}
+                        className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
+                          seedanceAudio
+                            ? 'border-purple-500 bg-purple-900/30 text-white'
+                            : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
+                        }`}
+                      >
+                        On
                       </button>
                     </div>
                   </div>
+                )}
 
-                  {/* Voice Mode */}
-                  <div className="mb-4">
-                    <label className="text-xs text-neutral-400 mb-2 block">Voice Mode</label>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onVoiceModeChange('speech_in_video')}
-                        className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
-                          voiceMode === 'speech_in_video'
-                            ? 'border-green-500 bg-green-900/30 text-white'
-                            : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
-                        }`}
-                      >
-                        In Video
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onVoiceModeChange('tts')}
-                        className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
-                          voiceMode === 'tts'
-                            ? 'border-green-500 bg-green-900/30 text-white'
-                            : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
-                        }`}
-                      >
-                        TTS Audio
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Dialogue Mode */}
-                  <div className="mb-4">
-                    <label className="text-xs text-neutral-400 mb-2 block">Dialogue</label>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onMultiCharacterChange(false)}
-                        className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
-                          !multiCharacter
-                            ? 'border-green-500 bg-green-900/30 text-white'
-                            : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
-                        }`}
-                      >
-                        Narrator
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onMultiCharacterChange(true)}
-                        className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
-                          multiCharacter
-                            ? 'border-green-500 bg-green-900/30 text-white'
-                            : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
-                        }`}
-                      >
-                        Characters
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Language */}
-                  <div className="mb-4">
-                    <label className="text-xs text-neutral-400 mb-2 block">Language</label>
-                    <select
-                      value={language}
-                      onChange={(e) => onLanguageChange(e.target.value as ContentLanguage)}
-                      className="w-full py-2 px-3 bg-neutral-700 border border-neutral-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                {/* Camera Cuts */}
+                <div className="mb-4">
+                  <label className="text-xs text-neutral-400 mb-2 block">Camera Cuts</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onEnableCutsChange(true)}
+                      className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
+                        enableCuts
+                          ? 'border-purple-500 bg-purple-900/30 text-white'
+                          : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
+                      }`}
                     >
-                      {SUPPORTED_LANGUAGES.map((lang) => (
-                        <option key={lang.code} value={lang.code}>
-                          {lang.label} ({lang.native})
-                        </option>
-                      ))}
-                    </select>
+                      Multi
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onEnableCutsChange(false)}
+                      className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
+                        !enableCuts
+                          ? 'border-purple-500 bg-purple-900/30 text-white'
+                          : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
+                      }`}
+                    >
+                      Single
+                    </button>
                   </div>
-
-                  {/* Background Music */}
-                  <div className="mb-4">
-                    <label className="text-xs text-neutral-400 mb-2 block">Background Music</label>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onBackgroundMusicEnabledChange(true)}
-                        className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
-                          backgroundMusicEnabled
-                            ? 'border-orange-500 bg-orange-900/30 text-white'
-                            : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
-                        }`}
-                      >
-                        Suno AI
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onBackgroundMusicEnabledChange(false)}
-                        className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
-                          !backgroundMusicEnabled
-                            ? 'border-orange-500 bg-orange-900/30 text-white'
-                            : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
-                        }`}
-                      >
-                        None
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Cost estimate for Seedance */}
-                  {isSeedance && (
-                    <div className="pt-3 border-t border-neutral-700">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-neutral-400">{seedanceSceneCount} × {seedanceDuration}s = {totalDuration}s</span>
-                        <span className="text-purple-400 font-medium">~${calculateSeedanceCost()}</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
-              )}
-            </div>
+
+                {/* Voice Mode */}
+                <div className="mb-4">
+                  <label className="text-xs text-neutral-400 mb-2 block">Voice Mode</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onVoiceModeChange('speech_in_video')}
+                      className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
+                        voiceMode === 'speech_in_video'
+                          ? 'border-green-500 bg-green-900/30 text-white'
+                          : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
+                      }`}
+                    >
+                      In Video
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onVoiceModeChange('tts')}
+                      className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
+                        voiceMode === 'tts'
+                          ? 'border-green-500 bg-green-900/30 text-white'
+                          : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
+                      }`}
+                    >
+                      TTS Audio
+                    </button>
+                  </div>
+                </div>
+
+                {/* Dialogue Mode */}
+                <div className="mb-4">
+                  <label className="text-xs text-neutral-400 mb-2 block">Dialogue</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onMultiCharacterChange(false)}
+                      className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
+                        !multiCharacter
+                          ? 'border-green-500 bg-green-900/30 text-white'
+                          : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
+                      }`}
+                    >
+                      Narrator
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onMultiCharacterChange(true)}
+                      className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
+                        multiCharacter
+                          ? 'border-green-500 bg-green-900/30 text-white'
+                          : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
+                      }`}
+                    >
+                      Characters
+                    </button>
+                  </div>
+                </div>
+
+                {/* Language */}
+                <div className="mb-4">
+                  <label className="text-xs text-neutral-400 mb-2 block">Language</label>
+                  <select
+                    value={language}
+                    onChange={(e) => onLanguageChange(e.target.value as ContentLanguage)}
+                    className="w-full py-2 px-3 bg-neutral-700 border border-neutral-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    {SUPPORTED_LANGUAGES.map((lang) => (
+                      <option key={lang.code} value={lang.code}>
+                        {lang.label} ({lang.native})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Background Music */}
+                <div className="mb-4">
+                  <label className="text-xs text-neutral-400 mb-2 block">Background Music</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onBackgroundMusicEnabledChange(true)}
+                      className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
+                        backgroundMusicEnabled
+                          ? 'border-orange-500 bg-orange-900/30 text-white'
+                          : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
+                      }`}
+                    >
+                      Suno AI
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onBackgroundMusicEnabledChange(false)}
+                      className={`flex-1 py-2 text-sm rounded-lg border transition-all ${
+                        !backgroundMusicEnabled
+                          ? 'border-orange-500 bg-orange-900/30 text-white'
+                          : 'border-neutral-600 text-neutral-400 hover:border-neutral-500'
+                      }`}
+                    >
+                      None
+                    </button>
+                  </div>
+                </div>
+
+                {/* Cost estimate for Seedance */}
+                {isSeedance && (
+                  <div className="pt-3 border-t border-neutral-700">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-neutral-400">{seedanceSceneCount} × {seedanceDuration}s = {totalDuration}s</span>
+                      <span className="text-purple-400 font-medium">~${calculateSeedanceCost()}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
