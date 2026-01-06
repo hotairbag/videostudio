@@ -533,14 +533,17 @@ export const generateStoryboard = async (script: Script, refImages?: string[], a
 
     ${layoutInstructions}
 
-    GRID STRUCTURE:
+    GRID STRUCTURE - STRICT UNIFORM LAYOUT:
     - The 9 panels must fill the ENTIRE image edge-to-edge with NO gaps, borders, or white space.
-    - Each panel must be exactly 1/3 of the total width and 1/3 of the total height.
+    - Each panel must be EXACTLY 1/3 of the total width and EXACTLY 1/3 of the total height.
+    - ALL 9 PANELS MUST BE IDENTICAL IN SIZE - no exceptions.
+    - This is NOT a manga or comic layout - do NOT vary panel sizes for dramatic effect.
     - NO margins, padding, or frames around or between panels.
-    - The panels must touch each other directly - seamless grid.
+    - The panels must touch each other directly - seamless grid like a tic-tac-toe board.
     - Top row: panels 1, 2, 3 (left to right)
     - Middle row: panels 4, 5, 6 (left to right)
     - Bottom row: panels 7, 8, 9 (left to right)
+    - Think of this as a 3×3 photo grid where every cell is exactly the same size.
 
     Ensure consistent characters, lighting, and style across all 9 panels.
     ${refImages && refImages.length > 0 ? 'Use the provided reference image(s) for character designs, art style, and visual consistency.' : ''}
@@ -650,11 +653,14 @@ export const generateStoryboard2 = async (
 
     ${layoutInstructions}
 
-    GRID STRUCTURE:
+    GRID STRUCTURE - STRICT UNIFORM LAYOUT:
     - The 6 panels must fill the ENTIRE image edge-to-edge with NO gaps, borders, or white space.
     - Layout: 3 columns × 2 rows = 6 panels total.
+    - Each panel must be EXACTLY 1/3 of the total width and EXACTLY 1/2 of the total height.
+    - ALL 6 PANELS MUST BE IDENTICAL IN SIZE - no exceptions.
+    - This is NOT a manga or comic layout - do NOT vary panel sizes for dramatic effect.
     - NO margins, padding, or frames around or between panels.
-    - The panels must touch each other directly - seamless grid.
+    - The panels must touch each other directly - seamless grid like a 3×2 photo grid.
     - Top row: panels 1, 2, 3 (left to right)
     - Bottom row: panels 4, 5, 6 (left to right)
 
