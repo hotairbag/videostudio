@@ -296,7 +296,7 @@ const InputForm: React.FC<InputFormProps> = ({
               </button>
 
               {showModelPicker && (
-                <div className="absolute bottom-full mb-2 right-0 w-56 bg-neutral-800 border border-neutral-700 rounded-xl shadow-xl overflow-hidden z-50">
+                <div className="absolute top-full mt-2 right-0 w-56 bg-neutral-800 border border-neutral-700 rounded-xl shadow-xl overflow-hidden z-50">
                   <button
                     type="button"
                     onClick={() => { onVideoModelChange('seedance-1.5'); setShowModelPicker(false); }}
@@ -342,7 +342,7 @@ const InputForm: React.FC<InputFormProps> = ({
 
               {/* Settings Popover */}
               {showSettings && (
-                <div className="absolute bottom-full mb-2 right-0 w-80 bg-neutral-800 border border-neutral-700 rounded-xl shadow-xl p-4 z-50">
+                <div className="absolute top-full mt-2 right-0 w-80 bg-neutral-800 border border-neutral-700 rounded-xl shadow-xl p-4 z-50 max-h-[70vh] overflow-y-auto">
                   <h4 className="text-sm font-semibold text-white mb-3">Settings</h4>
 
                   {/* Resolution */}
