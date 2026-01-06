@@ -10,7 +10,92 @@ import Production from '@/components/Production';
 import { generateScript, generateStoryboard, generateStoryboard2, generateMasterAudio, generateVideoForScene, setApiKey, getApiKey } from '@/services/geminiService';
 import { sliceGridImage, sliceGrid3x2Image } from '@/utils/imageUtils';
 import { useTaskPolling, useStartVideoTask, useStartMusicTask } from '@/hooks/useTaskPolling';
-import { AspectRatio, VideoModel, SeedanceResolution, SeedanceSceneCount, Script, VoiceMode, Character, DialogueLine, ReferenceImages } from '@/types';
+import { AspectRatio, VideoModel, SeedanceResolution, SeedanceDuration, SeedanceSceneCount, Script, VoiceMode, Character, DialogueLine, ReferenceImages, Scene, ContentLanguage } from '@/types';
+
+/**
+ * Build the full prompt for Seedance video generation
+ * Following Seedance 1.5 Pro official prompt guide
+ * Formula: Subject + Movement + Environment + Camera movement + Aesthetic description + Sound
+ * CRITICAL: Must include language directive to prevent unwanted language in generated video
+ */
+function buildSeedancePrompt(
+  scene: Scene,
+  voiceMode: VoiceMode,
+  characters?: Character[],
+  language: string = 'english',
+  style?: string
+): string {
+  const parts: string[] = [];
+
+  // Build language directive based on selected language
+  const languageUpper = language.toUpperCase();
+  const languageDirective = language === 'english'
+    ? '[LANGUAGE: ENGLISH ONLY - No Chinese text, signs, or dialogue]'
+    : `[LANGUAGE: ${languageUpper} - All dialogue and on-screen text must be in ${languageUpper}. Visual descriptions are in English for AI understanding.]`;
+  parts.push(languageDirective);
+
+  // Art Style reference (from script.style)
+  if (style) {
+    parts.push(`Art Style: ${style}`);
+  }
+
+  // Main visual description (already follows Seedance format from updated script generation)
+  // This includes: Subject + Movement + Environment + Camera movement
+  parts.push(scene.visualDescription);
+
+  // Audio atmosphere (SFX notes)
+  if (scene.audioDescription) {
+    parts.push(`Audio Atmosphere: ${scene.audioDescription}`);
+  }
+
+  // Audio instructions with language-specific dialogue instruction
+  const dialogueLanguageNote = language === 'english'
+    ? 'ENGLISH language only'
+    : `${languageUpper} language only`;
+
+  const audioInstruction = voiceMode === 'speech_in_video'
+    ? `AUDIO: Include ambient sound effects matching the scene. Characters speak dialogue in ${dialogueLanguageNote}. ABSOLUTELY NO BACKGROUND MUSIC - music will be added in post-production.`
+    : 'AUDIO: Include ambient sound effects only. NO DIALOGUE OR SPEECH. ABSOLUTELY NO BACKGROUND MUSIC - music will be added in post-production.';
+  parts.push(audioInstruction);
+
+  // Add dialogue for speech-in-video mode with Seedance emotional formatting
+  if (voiceMode === 'speech_in_video') {
+    if (scene.dialogue && scene.dialogue.length > 0) {
+      // Build character voice profile map
+      const voiceProfiles = new Map<string, string>();
+      if (characters) {
+        for (const char of characters) {
+          voiceProfiles.set(char.name.toLowerCase(), char.voiceProfile || '');
+        }
+      }
+
+      // Build dialogue lines following Seedance format:
+      // "In a [emotionalState] emotional state, with a [tone] tone and a [pace] speaking pace, [Speaker] says: '[text]'"
+      const dialogueLines = scene.dialogue.map(line => {
+        const profile = voiceProfiles.get(line.speaker.toLowerCase());
+
+        // Use Seedance vocal characteristics if available
+        if (line.emotionalState || line.tone || line.pace) {
+          const emotionalState = line.emotionalState || 'calm';
+          const tone = line.tone || 'even';
+          const pace = line.pace || 'normal';
+          return `In a ${emotionalState} emotional state, with a ${tone} tone and a ${pace} speaking pace, ${line.speaker} says: "${line.text}"`;
+        }
+
+        // Fallback to voice profile hint
+        const profileHint = profile ? ` (voice: ${profile})` : '';
+        return `${line.speaker}${profileHint}: "${line.text}"`;
+      }).join('\n');
+
+      parts.push(`${languageUpper} DIALOGUE:\n${dialogueLines}`);
+    } else if (scene.voiceoverText?.trim()) {
+      // Fallback to voiceoverText if no dialogue
+      parts.push(`VOICEOVER (speak in ${languageUpper} with a calm, clear voice): "${scene.voiceoverText}"`);
+    }
+  }
+
+  return parts.join('\n\n');
+}
 
 interface VideoStudioWithConvexProps {
   projectId: Id<'projects'>;
@@ -183,6 +268,34 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
     const characterNames = refImages?.characters.map(c => c.name) || [];
 
     try {
+      // Save original prompt to project
+      await updateProject({ projectId, originalPrompt: prompt });
+
+      // Upload character reference images to R2 and save URLs
+      if (refImages?.characters && refImages.characters.length > 0) {
+        const characterRefsWithUrls = await Promise.all(
+          refImages.characters.map(async (char) => {
+            // Upload all images for this character
+            const uploadRes = await fetch('/api/upload', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ images: char.images }),
+            });
+            if (!uploadRes.ok) {
+              console.warn(`Failed to upload images for character ${char.name}`);
+              return { name: char.name, imageUrls: [] };
+            }
+            const { urls } = await uploadRes.json();
+            return { name: char.name, imageUrls: urls };
+          })
+        );
+        // Save character refs to project as JSON
+        await updateProject({
+          projectId,
+          characterRefs: JSON.stringify(characterRefsWithUrls),
+        });
+      }
+
       await updateProjectStatus({ projectId, status: 'scripting' });
 
       const generatedScript = await generateScript(
@@ -194,7 +307,8 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
         project.seedanceSceneCount as 9 | 15,
         project.multiCharacter ?? false,
         (project.voiceMode ?? 'tts') as VoiceMode,
-        characterNames
+        characterNames,
+        project.language ?? 'english'
       );
 
       localScriptRef.current = generatedScript;
@@ -437,13 +551,22 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
         });
       } else {
         // Seedance: Use task-based async generation
+        // Build full prompt following Seedance 1.5 Pro guide structure
+        const seedancePrompt = buildSeedancePrompt(
+          sceneData,
+          (project.voiceMode ?? 'tts') as VoiceMode,
+          fullScript.characters,
+          project.language ?? 'english',
+          fullScript.style
+        );
         await startSeedanceVideo(
           convexScene._id,
-          sceneData.visualDescription + ' ' + (sceneData.cameraShot || ''),
+          seedancePrompt,
           frame.imageUrl,
           project.aspectRatio as '16:9' | '9:16',
           project.seedanceResolution as '480p' | '720p',
-          project.seedanceAudio
+          project.seedanceAudio,
+          (project.seedanceDuration ?? 4) as 4 | 8 | 12
         );
         // Video will be tracked by the polling hook
       }
@@ -554,8 +677,8 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
         setIsGeneratingAudio(false);
       }
 
-      // Generate music if not exists
-      if (!backgroundMusicUrl) {
+      // Generate music if enabled and not exists
+      if (project.backgroundMusicEnabled !== false && !backgroundMusicUrl) {
         setIsGeneratingMusic(true);
         try {
           await startMusic(fullScript.title, fullScript.style, fullScript.scenes);
@@ -601,13 +724,22 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
               });
             } else {
               // Seedance: Use task-based async generation
+              // Build full prompt following Seedance 1.5 Pro guide structure
+              const seedancePrompt = buildSeedancePrompt(
+                scene,
+                (project.voiceMode ?? 'tts') as VoiceMode,
+                fullScript.characters,
+                project.language ?? 'english',
+                fullScript.style
+              );
               await startSeedanceVideo(
                 convexScene._id,
-                scene.visualDescription + ' ' + (scene.cameraShot || ''),
+                seedancePrompt,
                 frame.imageUrl,
                 project.aspectRatio as '16:9' | '9:16',
                 project.seedanceResolution as '480p' | '720p',
-                project.seedanceAudio
+                project.seedanceAudio,
+                (project.seedanceDuration ?? 4) as 4 | 8 | 12
               );
             }
           } catch (err) {
@@ -691,17 +823,83 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
             onSeedanceAudioChange={(v) => updateProject({ projectId, seedanceAudio: v })}
             seedanceResolution={project.seedanceResolution as SeedanceResolution}
             onSeedanceResolutionChange={(v) => updateProject({ projectId, seedanceResolution: v })}
+            seedanceDuration={(project.seedanceDuration ?? 4) as SeedanceDuration}
+            onSeedanceDurationChange={(v) => updateProject({ projectId, seedanceDuration: v })}
             seedanceSceneCount={project.seedanceSceneCount as SeedanceSceneCount}
             onSeedanceSceneCountChange={(v) => updateProject({ projectId, seedanceSceneCount: v })}
             voiceMode={(project.voiceMode ?? 'tts') as VoiceMode}
             onVoiceModeChange={(v) => updateProject({ projectId, voiceMode: v })}
             multiCharacter={project.multiCharacter ?? false}
             onMultiCharacterChange={(v) => updateProject({ projectId, multiCharacter: v })}
+            language={(project.language ?? 'english') as ContentLanguage}
+            onLanguageChange={(v) => updateProject({ projectId, language: v })}
+            backgroundMusicEnabled={project.backgroundMusicEnabled ?? true}
+            onBackgroundMusicEnabledChange={(v) => updateProject({ projectId, backgroundMusicEnabled: v })}
           />
         )}
 
         {step === 'storyboard' && (storyboard1?.imageUrl || isGeneratingStoryboard1) && (
           <div className="space-y-6">
+            {/* Project Overview - Prompt & Character Refs */}
+            {project.originalPrompt && (
+              <div className="bg-neutral-800/50 rounded-xl p-4 border border-neutral-700">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-medium text-neutral-400 mb-2">Original Prompt</h3>
+                    <p className="text-neutral-200 text-sm whitespace-pre-wrap break-words">{project.originalPrompt}</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(project.originalPrompt);
+                    }}
+                    className="flex-shrink-0 p-2 text-neutral-400 hover:text-white hover:bg-neutral-700 rounded-lg transition-colors"
+                    title="Copy prompt"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+                </div>
+                {/* Character References */}
+                {project.characterRefs && (() => {
+                  try {
+                    const chars = JSON.parse(project.characterRefs) as Array<{name: string; imageUrls: string[]}>;
+                    if (chars.length === 0) return null;
+                    return (
+                      <div className="mt-4 pt-4 border-t border-neutral-700">
+                        <h3 className="text-sm font-medium text-neutral-400 mb-3">Character References</h3>
+                        <div className="flex flex-wrap gap-4">
+                          {chars.map((char, idx) => (
+                            <div key={idx} className="flex items-center gap-2">
+                              <div className="flex -space-x-2">
+                                {char.imageUrls.slice(0, 3).map((url, imgIdx) => (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    key={imgIdx}
+                                    src={url}
+                                    alt={`${char.name} ref ${imgIdx + 1}`}
+                                    className="w-10 h-10 rounded-full object-cover border-2 border-neutral-800"
+                                  />
+                                ))}
+                                {char.imageUrls.length > 3 && (
+                                  <div className="w-10 h-10 rounded-full bg-neutral-700 border-2 border-neutral-800 flex items-center justify-center text-xs text-neutral-400">
+                                    +{char.imageUrls.length - 3}
+                                  </div>
+                                )}
+                              </div>
+                              <span className="text-sm text-neutral-300">{char.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  } catch {
+                    return null;
+                  }
+                })()}
+              </div>
+            )}
+
             <div className="text-center">
               <h2 className="text-2xl font-bold mb-2">Cinematic Storyboard</h2>
               <p className="text-neutral-400">
@@ -880,6 +1078,9 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
             enableCuts={project.enableCuts}
             seedanceAudio={project.seedanceAudio}
             seedanceResolution={project.seedanceResolution}
+            seedanceDuration={(project.seedanceDuration ?? 4) as SeedanceDuration}
+            originalPrompt={project.originalPrompt}
+            characterRefs={project.characterRefs}
           />
         )}
       </main>

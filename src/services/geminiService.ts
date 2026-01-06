@@ -84,7 +84,8 @@ export const generateScript = async (
   seedanceSceneCount: 9 | 15 = 15,
   multiCharacter: boolean = false,
   voiceMode: VoiceMode = 'tts',
-  characterNames: string[] = []
+  characterNames: string[] = [],
+  language: string = 'english'
 ): Promise<Script> => {
   const ai = getClient();
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
@@ -158,20 +159,58 @@ export const generateScript = async (
     CORRECT: "A hand reaches for the doorknob [cut] insert shot of the brass doorknob turning" (no face needed)
   `;
 
+  // Seedance 1.5 Pro specific instructions based on the official prompt guide
+  const seedanceCameraVocabulary = `
+    SEEDANCE CAMERA MOVEMENT VOCABULARY (use these exact terms):
+    - dolly-in / dolly-out: Camera physically moves toward/away from subject
+    - pan left / pan right / pan up / pan down: Camera rotates on its axis
+    - track / follow: Camera follows a moving subject
+    - surround / orbit: Camera circles around the subject
+    - rise / fall: Camera moves vertically
+    - zoom-in / zoom-out: Lens focal length changes
+    - Hitchcock zoom: dolly-out + zoom-in (or reverse) for dramatic effect
+    - static shot: Camera remains fixed
+
+    SEEDANCE SHOT SIZES:
+    - wide shot / full shot: Shows full environment
+    - medium shot: Subject from waist up
+    - close-up: Face or detail
+    - extreme close-up / big close-up: Very tight on feature
+    - over-the-shoulder: Camera behind one character looking at another
+
+    SEEDANCE CAMERA ANGLES:
+    - eye-level: Camera at subject's eye height
+    - high angle: Camera looks down at subject
+    - low angle: Camera looks up at subject
+    - bird's eye view: Directly overhead
+    - Dutch angle: Camera tilted for tension
+  `;
+
   let cutsInstructions: string;
   if (isSeedance) {
-    // Seedance: shorter clips, so 1 cut max or single shot
+    // Seedance 1.5 Pro: Follow official prompt guide structure
     cutsInstructions = enableCuts ? `
-    CAMERA CUTS (SEEDANCE MODE - 4 SECOND CLIPS):
-    Since each clip is only 4 seconds, use at most 1 camera cut per scene for dynamic effect.
-    Use the [cut] tag sparingly - focus on one key angle change.
+    SEEDANCE 1.5 SHOT STRUCTURE (4-SECOND CLIPS):
+    Use explicit "Shot 1:", "Shot 2:" format for multi-shot scenes.
+    Maximum 2 shots per 4-second scene.
+
+    FORMAT EXAMPLE:
+    "Shot 1: Medium shot. A woman in a red dress stands by the window, soft light on her face. The camera performs a slow dolly-in.
+    Shot 2: Cut to close-up of her eyes, showing subtle emotion as she turns toward camera."
+
+    ${seedanceCameraVocabulary}
     ${startFrameConstraint}
-    Example: "Wide shot of a sunset [cut] close up of waves crashing"
     ` : `
-    SINGLE-SHOT SCENES (SEEDANCE MODE):
-    Each 4-second scene should be a SINGLE continuous shot with smooth camera movement.
-    Describe camera movements like "camera slowly pans right", "camera tracks forward", etc.
-    Do NOT use [cut] tags.
+    SEEDANCE 1.5 SINGLE-SHOT FORMAT (4-SECOND CLIPS):
+    Each scene is ONE continuous shot with smooth camera movement.
+    Follow the Seedance prompt formula: Subject + Movement + Environment + Camera movement + Aesthetic description
+
+    FORMAT EXAMPLE:
+    "Medium shot. A young woman with flowing black hair walks through a sunlit garden, her white dress swaying gently.
+    Soft morning light filters through cherry blossom trees. The camera performs a slow lateral track, following her movement.
+    Dreamy, ethereal atmosphere with bokeh highlights."
+
+    ${seedanceCameraVocabulary}
     `;
   } else {
     // Veo: 8 second clips, can have 2-3 cuts
@@ -204,11 +243,13 @@ export const generateScript = async (
     `;
   }
 
-  const visualDescriptionHint = enableCuts
-    ? (isSeedance
-        ? '- visualDescription: Short description with at most 1 [cut] tag for quick angle changes.'
-        : '- visualDescription: Multi-shot description with 2-3 [cut] tags for camera angle changes. Make it dynamic!')
-    : '- visualDescription: Single continuous shot with smooth camera movement. No cuts.';
+  const visualDescriptionHint = isSeedance
+    ? (enableCuts
+        ? '- visualDescription: Use "Shot 1:" and "Shot 2:" format. Include shot size, subject, movement, environment, camera movement. Max 2 shots per scene.'
+        : '- visualDescription: Follow Seedance formula: Shot size + Subject + Movement + Environment + Camera movement + Aesthetic. Single continuous shot.')
+    : (enableCuts
+        ? '- visualDescription: Multi-shot description with 2-3 [cut] tags for camera angle changes. Make it dynamic!'
+        : '- visualDescription: Single continuous shot with smooth camera movement. No cuts.');
 
   // Voice mode instructions
   const allVoices = [...GEMINI_VOICES.female, ...GEMINI_VOICES.male];
@@ -223,6 +264,24 @@ export const generateScript = async (
     ? `\n    - The user has provided reference images for these characters: ${characterNames.join(', ')}. Use these exact names for the characters in the story.`
     : '';
 
+  // Seedance-specific dialogue formatting with emotional state/tone/pace
+  const seedanceDialogueFormat = isSeedance && voiceMode === 'speech_in_video' ? `
+    SEEDANCE DIALOGUE FORMAT (for speech_in_video mode):
+    Each dialogue entry should include emotional and vocal characteristics.
+    Format each line with: emotional state, tone, speaking pace, then the actual dialogue.
+
+    EMOTIONAL STATES: calm, gentle, restrained, forceful, confident, anxious, joyful, melancholic, angry, surprised, determined
+    TONE OPTIONS: even, soft, low, firm, clear, warm, cold, playful, serious, sarcastic
+    PACE OPTIONS: slow, normal, fast, very slow, measured, rapid
+
+    EXAMPLE DIALOGUE FORMAT:
+    - Speaker: "Hana", emotionalState: "gentle", tone: "soft", pace: "slow", text: "I've been waiting for you."
+    - Speaker: "Ren", emotionalState: "restrained", tone: "low", pace: "measured", text: "I came as fast as I could."
+
+    This will be rendered for Seedance as:
+    "In a gentle emotional state, with a soft tone and a slow speaking pace, Hana says: 'I've been waiting for you.'"
+  ` : '';
+
   if (multiCharacter) {
     // Multi-character dialogue mode
     voiceInstructions = `
@@ -232,10 +291,11 @@ export const generateScript = async (
     - Available female voices: ${voiceListFemale}
     - Available male voices: ${voiceListMale}
     - Each character needs: id (unique string), name (display name), gender (male/female/neutral), voiceName (from available voices), voiceProfile (short 5-10 word description of their voice personality for consistent synthesis, e.g., "warm and gentle father figure" or "energetic young woman").
-    - For each scene's dialogue, use an array of {speaker: "CharacterName", text: "what they say"} objects.
+    - For each scene's dialogue, use an array of {speaker: "CharacterName", text: "what they say", emotionalState?: string, tone?: string, pace?: string} objects.
     - If there's narration (not spoken by a character), use speaker: "narrator".
     - The voiceoverText field should be the combined dialogue text for timing reference.
-    ${voiceMode === 'speech_in_video' ? `
+    ${seedanceDialogueFormat}
+    ${voiceMode === 'speech_in_video' && !isSeedance ? `
     SPEECH IN VIDEO MODE:
     - The voiceProfile will be sent to the video generation model so characters have consistent voices.
     - Keep voiceProfiles concise but distinctive.
@@ -276,10 +336,22 @@ export const generateScript = async (
     - Scene ${sceneCount} is the ONLY scene that should wrap up the story.
   `;
 
+  // Build language instruction - dialogue in selected language, visual descriptions always in English
+  const languageUpper = language.toUpperCase();
+  const languageInstruction = language === 'english'
+    ? 'LANGUAGE REQUIREMENT: All content MUST be in ENGLISH only. Any text, signs, dialogue, or written content described in scenes must be in English - never Chinese or other languages.'
+    : `LANGUAGE REQUIREMENT:
+    - All dialogue, voiceoverText, and spoken content MUST be in ${languageUpper}.
+    - The visualDescription and audioDescription fields must remain in ENGLISH (for the AI video generator to understand).
+    - Any on-screen text, signs, or written content shown in scenes should be in ${languageUpper}.
+    - Character names can stay in their original form.`;
+
   const systemInstruction = `
     You are an expert film director and scriptwriter.
     Your goal is to create a production script for a ~${sceneCount * sceneDuration} second video (${sceneCount} scenes × ${sceneDuration} seconds each).
     The script MUST be broken down into exactly ${sceneCount} key scenes. ${gridDescription}
+
+    ${languageInstruction}
     ${narrativeEndingInstruction}
 
     CRITICAL TIMING REQUIREMENT:
@@ -299,7 +371,11 @@ export const generateScript = async (
     - audioDescription: SFX and atmosphere notes.
     - cameraShot: The PRIMARY shot type (e.g. Wide Shot, Medium Shot, Close Up).
     - voiceoverText: The exact spoken dialogue/narration for this specific ${sceneDuration}-second segment (${wordsPerScene} words max).
-    ${multiCharacter ? '- dialogue: Array of {speaker, text} pairs for who says what in this scene.' : ''}
+    ${multiCharacter
+      ? (isSeedance && voiceMode === 'speech_in_video'
+          ? '- dialogue: Array of {speaker, text, emotionalState?, tone?, pace?} for who says what with vocal characteristics.'
+          : '- dialogue: Array of {speaker, text} pairs for who says what in this scene.')
+      : ''}
   `;
 
   const userPrompt = `
@@ -326,14 +402,24 @@ export const generateScript = async (
 
     // Add dialogue field for multi-character mode
     if (multiCharacter) {
+      // For Seedance speech_in_video mode, include emotional/tone/pace fields
+      const dialogueProperties: Record<string, { type: Type }> = {
+        speaker: { type: Type.STRING },
+        text: { type: Type.STRING },
+      };
+
+      // Add optional Seedance vocal characteristic fields
+      if (isSeedance && voiceMode === 'speech_in_video') {
+        dialogueProperties.emotionalState = { type: Type.STRING };
+        dialogueProperties.tone = { type: Type.STRING };
+        dialogueProperties.pace = { type: Type.STRING };
+      }
+
       (sceneProperties as Record<string, unknown>).dialogue = {
         type: Type.ARRAY,
         items: {
           type: Type.OBJECT,
-          properties: {
-            speaker: { type: Type.STRING },
-            text: { type: Type.STRING },
-          },
+          properties: dialogueProperties,
           required: ["speaker", "text"],
         },
       };
@@ -633,6 +719,52 @@ export const generateStoryboard2 = async (
   }
 };
 
+/**
+ * Build Seedance prompt following the official Seedance 1.5 Pro prompt guide
+ * Formula: Subject + Movement + Environment + Camera movement + Aesthetic description + Sound
+ */
+const buildSeedancePrompt = (
+  scene: Scene,
+  style: string,
+  voiceMode: VoiceMode,
+  characters?: Character[]
+): string => {
+  const parts: string[] = [];
+
+  // Language directive - CRITICAL for preventing Chinese (Seedance is ByteDance model)
+  parts.push('[LANGUAGE: ENGLISH ONLY - No Chinese text, signs, or dialogue]');
+
+  // Art Style reference
+  if (style) {
+    parts.push(`Art Style: ${style}`);
+  }
+
+  // Main visual description (should already follow Seedance format from script generation)
+  // This includes: Subject + Movement + Environment + Camera movement
+  parts.push(scene.visualDescription);
+
+  // Audio atmosphere (SFX notes)
+  if (scene.audioDescription) {
+    parts.push(`Audio Atmosphere: ${scene.audioDescription}`);
+  }
+
+  // Audio mode instructions
+  const audioInstruction = voiceMode === 'speech_in_video'
+    ? 'AUDIO: Include ambient sound effects matching the scene. Characters speak dialogue in ENGLISH only. ABSOLUTELY NO BACKGROUND MUSIC - music will be added in post-production.'
+    : 'AUDIO: Include ambient sound effects only. NO DIALOGUE OR SPEECH. ABSOLUTELY NO BACKGROUND MUSIC - music will be added in post-production.';
+  parts.push(audioInstruction);
+
+  // Add dialogue for speech-in-video mode
+  if (voiceMode === 'speech_in_video') {
+    const dialogueSection = buildDialoguePrompt(scene, characters);
+    if (dialogueSection) {
+      parts.push(dialogueSection);
+    }
+  }
+
+  return parts.join('\n\n');
+};
+
 // Generate video using Seedance API
 const generateSeedanceVideo = async (
   scene: Scene,
@@ -641,7 +773,8 @@ const generateSeedanceVideo = async (
   resolution: SeedanceResolution,
   generateAudio: boolean,
   voiceMode: VoiceMode = 'tts',
-  characters?: Character[]
+  characters?: Character[],
+  style?: string
 ): Promise<string> => {
   // First, upload the image to R2 to get a public URL
   const uploadRes = await fetch('/api/upload', {
@@ -658,23 +791,8 @@ const generateSeedanceVideo = async (
   const { urls } = await uploadRes.json();
   const imageUrl = urls[0];
 
-  // Build prompt for Seedance
-  let prompt = `${scene.visualDescription}. ${scene.audioDescription || ''}`.trim();
-
-  // Add audio instructions - CRITICAL: No background music
-  const audioMode = voiceMode === 'speech_in_video'
-    ? 'Include ambient sound effects. Characters speak dialogue in ENGLISH only. ABSOLUTELY NO BACKGROUND MUSIC.'
-    : 'Include ambient sound effects only. NO DIALOGUE. ABSOLUTELY NO BACKGROUND MUSIC.';
-
-  prompt = `${prompt}\n\nAUDIO: ${audioMode}`;
-
-  // Add dialogue for speech-in-video mode
-  if (voiceMode === 'speech_in_video') {
-    const dialogueSection = buildDialoguePrompt(scene, characters);
-    if (dialogueSection) {
-      prompt = `${prompt}\n${dialogueSection}`;
-    }
-  }
+  // Build prompt following Seedance 1.5 Pro guide structure
+  const prompt = buildSeedancePrompt(scene, style || '', voiceMode, characters);
 
   // Call Seedance API
   const seedanceRes = await fetch('/api/video/seedance', {
@@ -700,12 +818,13 @@ const generateSeedanceVideo = async (
 
 /**
  * Build dialogue prompt section for speech-in-video mode
+ * Following Seedance 1.5 Pro guide format with emotional state, tone, and pace
  */
 const buildDialoguePrompt = (scene: Scene, characters?: Character[]): string => {
   if (!scene.dialogue || scene.dialogue.length === 0) {
     // Fallback to voiceoverText if no dialogue
     if (scene.voiceoverText?.trim()) {
-      return `DIALOGUE (speak in English): "${scene.voiceoverText}"`;
+      return `VOICEOVER (speak in English with a calm, clear voice): "${scene.voiceoverText}"`;
     }
     return '';
   }
@@ -718,15 +837,26 @@ const buildDialoguePrompt = (scene: Scene, characters?: Character[]): string => 
     }
   }
 
-  // Build dialogue lines with speaker and voice profile
+  // Build dialogue lines following Seedance format:
+  // "In a [emotionalState] emotional state, with a [tone] tone and a [pace] speaking pace, [Speaker] says: '[text]'"
   const dialogueLines = scene.dialogue.map(line => {
     const profile = voiceProfiles.get(line.speaker.toLowerCase());
+
+    // Use Seedance vocal characteristics if available
+    if (line.emotionalState || line.tone || line.pace) {
+      const emotionalState = line.emotionalState || 'calm';
+      const tone = line.tone || 'even';
+      const pace = line.pace || 'normal';
+      return `In a ${emotionalState} emotional state, with a ${tone} tone and a ${pace} speaking pace, ${line.speaker} says: "${line.text}"`;
+    }
+
+    // Fallback to voice profile hint
     const profileHint = profile ? ` (voice: ${profile})` : '';
     return `${line.speaker}${profileHint}: "${line.text}"`;
-  }).join('\n      ');
+  }).join('\n');
 
-  return `DIALOGUE - CRITICAL: All speech must be in ENGLISH language only:
-      ${dialogueLines}`;
+  return `ENGLISH DIALOGUE:
+${dialogueLines}`;
 };
 
 // Generate video using Veo API
@@ -885,11 +1015,12 @@ export const generateVideoForScene = async (
   seedanceResolution: SeedanceResolution = '720p',
   seedanceAudio: boolean = false,
   voiceMode: VoiceMode = 'tts',
-  characters?: Character[]
+  characters?: Character[],
+  style?: string // Art style for Seedance prompts
 ): Promise<string> => {
   try {
     if (videoModel === 'seedance-1.5') {
-      return await generateSeedanceVideo(scene, startFrameBase64, aspectRatio, seedanceResolution, seedanceAudio, voiceMode, characters);
+      return await generateSeedanceVideo(scene, startFrameBase64, aspectRatio, seedanceResolution, seedanceAudio, voiceMode, characters, style);
     } else {
       return await generateVeoVideo(scene, startFrameBase64, aspectRatio, voiceMode, characters);
     }

@@ -266,7 +266,8 @@ export default function VideoStudio() {
         state.seedanceResolution,
         state.seedanceAudio,
         state.voiceMode,
-        state.script?.characters
+        state.script?.characters,
+        state.script?.style // Pass style for Seedance prompts
       );
       setState(prev => ({
         ...prev,
@@ -419,7 +420,8 @@ export default function VideoStudio() {
                 state.seedanceResolution,
                 state.seedanceAudio,
                 state.voiceMode,
-                state.script?.characters
+                state.script?.characters,
+                state.script?.style // Pass style for Seedance prompts
               );
               setState(prev => ({
                 ...prev,

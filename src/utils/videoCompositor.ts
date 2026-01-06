@@ -16,10 +16,13 @@ export const composeAndExportVideo = async (
   backgroundMusicUrl: string | null,
   onProgress: (msg: string) => void,
   aspectRatio: AspectRatio = '16:9',
-  videoModel: VideoModel = 'veo-3.1'
+  videoModel: VideoModel = 'veo-3.1',
+  includeMusic: boolean = true,
+  customClipDuration?: number  // Override the model-based duration
 ): Promise<Blob> => {
 
-  const clipDuration = VIDEO_DURATION_BY_MODEL[videoModel];
+  // Use custom duration if provided, otherwise fall back to model-based duration
+  const clipDuration = customClipDuration ?? VIDEO_DURATION_BY_MODEL[videoModel];
 
   onProgress("Initializing compositor...");
 
@@ -50,7 +53,7 @@ export const composeAndExportVideo = async (
   }
 
   let musicBuffer: AudioBuffer | null = null;
-  if (backgroundMusicUrl) {
+  if (includeMusic && backgroundMusicUrl) {
     try {
       musicBuffer = await loadAudio(backgroundMusicUrl);
     } catch (e) {
@@ -58,7 +61,13 @@ export const composeAndExportVideo = async (
     }
   }
 
-  onProgress("Pre-loading video scenes...");
+  // Debug: Log video URL mapping
+  const scenesWithVideoUrls = scenes.filter(s => videoUrls[s.id]);
+  console.log(`[Export] Found ${scenesWithVideoUrls.length} scenes with video URLs:`,
+    scenesWithVideoUrls.map(s => ({ id: s.id, hasUrl: !!videoUrls[s.id] })));
+  console.log(`[Export] Video URL keys:`, Object.keys(videoUrls));
+
+  onProgress(`Pre-loading ${scenesWithVideoUrls.length} video scenes...`);
   const videoElements: Record<number, HTMLVideoElement> = {};
   const videoAudioSources: Record<number, { source: MediaElementAudioSourceNode; gain: GainNode }> = {};
 
@@ -66,17 +75,19 @@ export const composeAndExportVideo = async (
     return new Promise((resolve, reject) => {
       const vid = document.createElement('video');
       vid.crossOrigin = "anonymous";
-      // Use proxy for R2 videos to avoid CORS issues during export
-      const proxyUrl = url.startsWith('https://video-studio.jarwater.com/')
-        ? `/api/proxy-video?url=${encodeURIComponent(url)}`
-        : url;
+      // Always use proxy during export to avoid CORS issues when drawing to canvas
+      // The proxy handles R2, Seedance/Kie.ai, and other allowed video sources
+      const proxyUrl = `/api/proxy-video?url=${encodeURIComponent(url)}`;
       vid.src = proxyUrl;
       vid.playsInline = true;
       vid.preload = "auto";
       // Note: Do NOT mute - we capture audio via MediaElementAudioSourceNode
-      vid.oncanplaythrough = () => resolve(vid);
+      vid.oncanplaythrough = () => {
+        console.log(`[Export] Video ${id} loaded successfully, duration: ${vid.duration}s`);
+        resolve(vid);
+      };
       vid.onerror = (e) => {
-        console.error(`Failed to load video ${id}:`, e);
+        console.error(`[Export] Failed to load video ${id}:`, e);
         reject(e);
       };
       vid.load();
@@ -85,8 +96,14 @@ export const composeAndExportVideo = async (
 
   await Promise.all(scenes.map(async (scene) => {
     if (videoUrls[scene.id]) {
-      const vid = await loadVideo(scene.id, videoUrls[scene.id]);
-      videoElements[scene.id] = vid;
+      let vid: HTMLVideoElement;
+      try {
+        vid = await loadVideo(scene.id, videoUrls[scene.id]);
+        videoElements[scene.id] = vid;
+      } catch (loadError) {
+        console.error(`[Export] Skipping scene ${scene.id} due to load error:`, loadError);
+        return; // Continue with other videos
+      }
 
       // Create audio source from video element for SFX mixing
       try {
@@ -101,6 +118,10 @@ export const composeAndExportVideo = async (
       }
     }
   }));
+
+  // Log final video count
+  const loadedVideoCount = Object.keys(videoElements).length;
+  console.log(`[Export] Successfully loaded ${loadedVideoCount} videos for export`);
 
   const canvasStream = canvas.captureStream(30);
   const audioTrack = dest.stream.getAudioTracks()[0];

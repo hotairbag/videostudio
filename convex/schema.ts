@@ -9,15 +9,22 @@ export default defineSchema({
     title: v.string(),
     style: v.string(),
     originalPrompt: v.string(),
+    // Character reference images (JSON array of {name: string, imageUrls: string[]})
+    characterRefs: v.optional(v.string()),
     aspectRatio: v.union(v.literal("16:9"), v.literal("9:16")),
     videoModel: v.union(v.literal("veo-3.1"), v.literal("seedance-1.5")),
     enableCuts: v.boolean(),
     seedanceAudio: v.boolean(),
     seedanceResolution: v.union(v.literal("480p"), v.literal("720p")),
+    seedanceDuration: v.optional(v.union(v.literal(4), v.literal(8), v.literal(12))),
     seedanceSceneCount: v.optional(v.union(v.literal(9), v.literal(15))),
     // Voice/dialogue settings
     voiceMode: v.optional(v.union(v.literal("tts"), v.literal("speech_in_video"))),
     multiCharacter: v.optional(v.boolean()),
+    // Language for dialogue/text content (instructions stay in English)
+    language: v.optional(v.string()), // e.g., "english", "japanese", "chinese", "korean", "spanish"
+    // Whether to generate background music via Suno
+    backgroundMusicEnabled: v.optional(v.boolean()),
     status: v.union(
       v.literal("draft"),
       v.literal("scripting"),

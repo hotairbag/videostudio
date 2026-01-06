@@ -21,7 +21,7 @@ type TaskType = 'video_seedance' | 'video_veo' | 'music_suno' | 'audio_tts';
 function getStatusEndpoint(taskType: TaskType): string {
   switch (taskType) {
     case 'video_seedance':
-      return '/api/video/seedance/status';
+      return '/api/video/byteplus/status';
     case 'music_suno':
       return '/api/music/generate/status';
     default:
@@ -185,14 +185,15 @@ export function useStartVideoTask(projectId: Id<'projects'> | undefined) {
     imageUrl: string,
     aspectRatio: '16:9' | '9:16',
     resolution: '480p' | '720p' = '720p',
-    generateAudio: boolean = false
+    generateAudio: boolean = false,
+    duration: 4 | 8 | 12 = 4
   ) => {
     if (!projectId) {
       throw new Error('Project ID is required');
     }
 
-    // Start the video generation
-    const response = await fetch('/api/video/seedance/start', {
+    // Start the video generation via BytePlus API
+    const response = await fetch('/api/video/byteplus/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -201,6 +202,7 @@ export function useStartVideoTask(projectId: Id<'projects'> | undefined) {
         aspectRatio,
         resolution,
         generateAudio,
+        duration,
       }),
     });
 

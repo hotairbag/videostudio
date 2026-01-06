@@ -2,6 +2,7 @@ export const runtime = 'edge';
 
 import { NextRequest, NextResponse } from 'next/server';
 
+const BYTEPLUS_API_BASE = 'https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks';
 const R2_BUCKET = process.env.CLOUDFLARE_R2_BUCKET || 'video-studio';
 const R2_CUSTOM_DOMAIN = 'video-studio.jarwater.com';
 
@@ -117,11 +118,7 @@ async function signRequest(
   };
 }
 
-async function uploadToR2(
-  filename: string,
-  data: Uint8Array,
-  contentType: string
-): Promise<void> {
+async function uploadVideoToR2(videoUrl: string, taskId: string): Promise<string> {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const accessKeyId = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
   const secretAccessKey = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
@@ -130,85 +127,143 @@ async function uploadToR2(
     throw new Error('Cloudflare R2 credentials not configured');
   }
 
-  const url = `https://${accountId}.r2.cloudflarestorage.com/${R2_BUCKET}/${filename}`;
+  // Fetch video from BytePlus
+  const videoRes = await fetch(videoUrl);
+  if (!videoRes.ok) {
+    throw new Error(`Failed to fetch video from BytePlus: ${videoRes.status}`);
+  }
+
+  const videoData = new Uint8Array(await videoRes.arrayBuffer());
+
+  // Determine file extension from URL or content type
+  const urlPath = new URL(videoUrl).pathname;
+  const extension = urlPath.includes('.mp4') ? 'mp4' : 'mp4';
+  const filename = `byteplus/${taskId}.${extension}`;
+
+  const r2Url = `https://${accountId}.r2.cloudflarestorage.com/${R2_BUCKET}/${filename}`;
 
   const headers: Record<string, string> = {
-    'content-type': contentType,
-    'content-length': data.length.toString(),
+    'content-type': 'video/mp4',
+    'content-length': videoData.length.toString(),
   };
 
   const signedHeaders = await signRequest(
     'PUT',
-    url,
+    r2Url,
     headers,
-    data,
+    videoData,
     { accessKeyId, secretAccessKey }
   );
 
-  const response = await fetch(url, {
+  const uploadRes = await fetch(r2Url, {
     method: 'PUT',
     headers: signedHeaders,
-    body: data.buffer as ArrayBuffer,
+    body: videoData.buffer as ArrayBuffer,
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`R2 upload failed: ${response.status} - ${errorText}`);
+  if (!uploadRes.ok) {
+    const errorText = await uploadRes.text();
+    throw new Error(`R2 upload failed: ${uploadRes.status} - ${errorText}`);
   }
+
+  // Return public URL
+  return `https://${R2_CUSTOM_DOMAIN}/${filename}`;
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const { images } = await request.json();
+export async function GET(request: NextRequest) {
+  const apiKey = process.env.BYTEPLUS_ARK_API_KEY;
 
-    if (!images || !Array.isArray(images) || images.length === 0) {
+  if (!apiKey) {
+    return NextResponse.json(
+      { error: 'BytePlus ARK API key not configured' },
+      { status: 500 }
+    );
+  }
+
+  const taskId = request.nextUrl.searchParams.get('taskId');
+
+  if (!taskId) {
+    return NextResponse.json(
+      { error: 'Missing taskId parameter' },
+      { status: 400 }
+    );
+  }
+
+  try {
+    // Query task status from BytePlus
+    const statusRes = await fetch(`${BYTEPLUS_API_BASE}/${taskId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!statusRes.ok) {
+      const errorText = await statusRes.text();
+      console.error('[BytePlus] Status query failed:', statusRes.status, errorText);
       return NextResponse.json(
-        { error: 'No images provided' },
-        { status: 400 }
+        { error: `BytePlus status query failed: ${statusRes.status}` },
+        { status: statusRes.status }
       );
     }
 
-    // Prepare all uploads in parallel for much faster processing
-    const timestamp = Date.now();
-    const uploadPromises = images.map(async (base64Data: string, i: number) => {
-      // Handle data URL format (data:image/png;base64,...)
-      const base64Content = base64Data.includes(',')
-        ? base64Data.split(',')[1]
-        : base64Data;
+    const taskData = await statusRes.json();
+    console.log('[BytePlus] Task status:', taskData.status, 'for task:', taskId);
 
-      // Detect mime type from data URL or default to png
-      let mimeType = 'image/png';
-      let extension = 'png';
-      if (base64Data.startsWith('data:')) {
-        const mimeMatch = base64Data.match(/data:([^;]+);/);
-        if (mimeMatch) {
-          mimeType = mimeMatch[1];
-          extension = mimeType.split('/')[1] || 'png';
-        }
+    // Map BytePlus status to our status format
+    // BytePlus statuses: queued, running, succeeded, failed, expired
+    if (taskData.status === 'succeeded') {
+      // Extract video URL from response
+      const videoContent = taskData.content?.find((c: { type: string }) => c.type === 'video');
+      const byteplusVideoUrl = videoContent?.video?.url;
+
+      if (!byteplusVideoUrl) {
+        console.error('[BytePlus] Video URL not found in response:', JSON.stringify(taskData, null, 2));
+        return NextResponse.json(
+          { error: 'Video generated but URL not found in response' },
+          { status: 500 }
+        );
       }
 
-      // Generate unique filename
-      const randomId = Math.random().toString(36).substring(2, 10);
-      const filename = `frames/${timestamp}_${randomId}_${i}.${extension}`;
+      // Upload to R2 for CORS support
+      try {
+        const r2VideoUrl = await uploadVideoToR2(byteplusVideoUrl, taskId);
+        console.log(`[BytePlus] Video proxied to R2: ${r2VideoUrl}`);
+        return NextResponse.json({
+          status: 'completed',
+          videoUrl: r2VideoUrl
+        });
+      } catch (proxyError) {
+        console.error('[BytePlus] Failed to proxy video to R2:', proxyError);
+        // Fall back to original URL if proxy fails
+        return NextResponse.json({
+          status: 'completed',
+          videoUrl: byteplusVideoUrl
+        });
+      }
+    } else if (taskData.status === 'failed') {
+      return NextResponse.json({
+        status: 'failed',
+        error: taskData.error?.message || 'BytePlus video generation failed'
+      });
+    } else if (taskData.status === 'expired') {
+      return NextResponse.json({
+        status: 'failed',
+        error: 'Task expired before completion'
+      });
+    } else {
+      // queued or running - still processing
+      return NextResponse.json({
+        status: 'processing',
+        byteplusStatus: taskData.status
+      });
+    }
 
-      // Convert base64 to Uint8Array (edge-compatible)
-      const bytes = base64ToUint8Array(base64Content);
-
-      // Upload to R2 using signed fetch
-      await uploadToR2(filename, bytes, mimeType);
-
-      // Build public URL using custom domain
-      return `https://${R2_CUSTOM_DOMAIN}/${filename}`;
-    });
-
-    // Execute all uploads in parallel
-    const uploadedUrls = await Promise.all(uploadPromises);
-
-    return NextResponse.json({ urls: uploadedUrls });
   } catch (error) {
-    console.error('Upload error:', error);
+    console.error('[BytePlus] Status check error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Upload failed' },
+      { error: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

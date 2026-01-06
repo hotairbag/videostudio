@@ -32,11 +32,16 @@ jest.mock('@google/genai', () => ({
   },
 }));
 
+// Mock URL.createObjectURL
+const mockCreateObjectURL = jest.fn().mockReturnValue('blob:mock-url');
+global.URL.createObjectURL = mockCreateObjectURL;
+
 describe('geminiService', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCreateObjectURL.mockClear();
     // Reset window API key
     if (typeof window !== 'undefined') {
       delete (window as Window & { __GOOGLE_API_KEY__?: string }).__GOOGLE_API_KEY__;
@@ -353,10 +358,11 @@ describe('geminiService', () => {
 
       await generateStoryboard2(mockScript15Scenes, mockStylePanels, undefined, '16:9');
 
-      // Verify the image config uses 21:9 aspect ratio for landscape
+      // Verify the image config uses 16:9 aspect ratio for landscape (closest supported ratio)
       const callArgs = mockGenerateContent.mock.calls[0][0];
-      expect(callArgs.config.imageConfig.aspectRatio).toBe('21:9');
-      expect(callArgs.contents.parts[0].text).toContain('16:9 landscape');
+      expect(callArgs.config.imageConfig.aspectRatio).toBe('16:9');
+      // The prompt describes landscape orientation
+      expect(callArgs.contents.parts[0].text).toContain('LANDSCAPE MODE');
     });
 
     it('should use 4:5 aspect ratio for 9:16 portrait second storyboard grid', async () => {
@@ -384,7 +390,9 @@ describe('geminiService', () => {
       // Verify the image config uses 4:5 aspect ratio for portrait
       const callArgs = mockGenerateContent.mock.calls[0][0];
       expect(callArgs.config.imageConfig.aspectRatio).toBe('4:5');
-      expect(callArgs.contents.parts[0].text).toContain('9:16 portrait');
+      // The prompt mentions portrait mode and 9:16 aspect ratio
+      expect(callArgs.contents.parts[0].text).toContain('PORTRAIT MODE');
+      expect(callArgs.contents.parts[0].text).toContain('9:16 aspect ratio');
     });
 
     it('should include style consistency instructions', async () => {
@@ -719,8 +727,9 @@ describe('geminiService', () => {
           }),
         })
       );
-      // Audio is returned as data URL with correct mime type from response
-      expect(result).toBe('data:audio/wav;base64,base64audiodata');
+      // Audio is returned as a blob URL via URL.createObjectURL
+      expect(mockCreateObjectURL).toHaveBeenCalled();
+      expect(result).toBe('blob:mock-url');
     });
 
     it('should return empty string if no voiceover text', async () => {

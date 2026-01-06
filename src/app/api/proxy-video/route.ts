@@ -9,9 +9,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 });
   }
 
-  // Only allow proxying from our R2 bucket domain
-  if (!url.startsWith('https://video-studio.jarwater.com/')) {
-    return NextResponse.json({ error: 'Invalid video URL' }, { status: 403 });
+  // Allow proxying from R2 and known video providers (Seedance/Kie.ai)
+  const allowedDomains = [
+    'video-studio.jarwater.com',
+    'kieai.erweima.ai',
+    'api.klingai.com',
+    'cdn.klingai.com',
+  ];
+
+  try {
+    const parsedUrl = new URL(url);
+    if (!allowedDomains.some(domain => parsedUrl.hostname.includes(domain))) {
+      return NextResponse.json({ error: 'Invalid video URL domain' }, { status: 403 });
+    }
+  } catch {
+    return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
   }
 
   try {

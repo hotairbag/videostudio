@@ -49,6 +49,9 @@ describe('Production', () => {
     isGeneratingFullMovie: false,
     onGenerateVideo: jest.fn(),
     onGenerateFullMovie: jest.fn(),
+    aspectRatio: '16:9' as const,
+    videoModel: 'seedance-1.5' as const,
+    voiceMode: 'tts' as const,
   };
 
   beforeEach(() => {
@@ -90,7 +93,8 @@ describe('Production', () => {
   it('should show generating indicator when scene is generating', () => {
     render(<Production {...defaultProps} generatingVideoIds={[1]} />);
 
-    expect(screen.getByText(/veo rendering/i)).toBeInTheDocument();
+    // Default videoModel is seedance-1.5, so it shows "Seedance Rendering..."
+    expect(screen.getByText(/seedance rendering/i)).toBeInTheDocument();
   });
 
   it('should show Generate Full Movie button when not all videos are ready', () => {
@@ -151,13 +155,12 @@ describe('Production', () => {
     expect(videos.length).toBeGreaterThan(0);
   });
 
-  it('should display scene duration from timeRange', () => {
+  it('should display scene duration from videoModel clip duration', () => {
     render(<Production {...defaultProps} />);
 
-    // Scene 1 has timeRange '00:00 - 00:05' = 5 seconds
-    expect(screen.getByText(/Scene 1 • Wide • 5s/)).toBeInTheDocument();
-    // Scene 2 has timeRange '00:05 - 00:10' = 5 seconds
-    expect(screen.getByText(/Scene 2 • Medium • 5s/)).toBeInTheDocument();
+    // Seedance clips are 4 seconds (videoModel: 'seedance-1.5')
+    expect(screen.getByText(/Scene 1 • Wide • 4s/)).toBeInTheDocument();
+    expect(screen.getByText(/Scene 2 • Medium • 4s/)).toBeInTheDocument();
   });
 
   describe('Export functionality', () => {

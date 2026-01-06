@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { fileToBase64 } from '@/utils/imageUtils';
-import { AspectRatio, VideoModel, SeedanceResolution, SeedanceSceneCount, VoiceMode, ReferenceImages } from '@/types';
+import { AspectRatio, VideoModel, SeedanceResolution, SeedanceDuration, SeedanceSceneCount, VoiceMode, ReferenceImages, ContentLanguage, SUPPORTED_LANGUAGES } from '@/types';
 
 interface CharacterRefState {
   name: string;
@@ -22,19 +22,26 @@ interface InputFormProps {
   onSeedanceAudioChange: (enabled: boolean) => void;
   seedanceResolution: SeedanceResolution;
   onSeedanceResolutionChange: (resolution: SeedanceResolution) => void;
+  seedanceDuration: SeedanceDuration;
+  onSeedanceDurationChange: (duration: SeedanceDuration) => void;
   seedanceSceneCount: SeedanceSceneCount;
   onSeedanceSceneCountChange: (count: SeedanceSceneCount) => void;
   voiceMode: VoiceMode;
   onVoiceModeChange: (mode: VoiceMode) => void;
   multiCharacter: boolean;
   onMultiCharacterChange: (enabled: boolean) => void;
+  language: ContentLanguage;
+  onLanguageChange: (language: ContentLanguage) => void;
+  backgroundMusicEnabled: boolean;
+  onBackgroundMusicEnabledChange: (enabled: boolean) => void;
 }
 
-// Cost estimates for Seedance (approximate)
+// Cost estimates for Seedance via BytePlus (approximate, with 50% offline discount)
 const SEEDANCE_COSTS = {
-  basePerClip: 0.05, // Base cost per 4s clip at 720p without audio
+  basePer4s: 0.025, // Base cost per 4s at 720p without audio (offline pricing)
   audioMultiplier: 1.5, // +50% for audio generation
   resolution480p: 0.7, // 30% cheaper for 480p
+  durationMultiplier: { 4: 1, 8: 2, 12: 3 } as Record<number, number>,
 };
 
 const InputForm: React.FC<InputFormProps> = ({
@@ -50,12 +57,18 @@ const InputForm: React.FC<InputFormProps> = ({
   onSeedanceAudioChange,
   seedanceResolution,
   onSeedanceResolutionChange,
+  seedanceDuration,
+  onSeedanceDurationChange,
   seedanceSceneCount,
   onSeedanceSceneCountChange,
   voiceMode,
   onVoiceModeChange,
   multiCharacter,
   onMultiCharacterChange,
+  language,
+  onLanguageChange,
+  backgroundMusicEnabled,
+  onBackgroundMusicEnabledChange,
 }) => {
   const [prompt, setPrompt] = useState('');
   const [refVideo, setRefVideo] = useState<File | null>(null);
@@ -159,10 +172,10 @@ const InputForm: React.FC<InputFormProps> = ({
     onSubmit(prompt, videoBase64, refImages);
   };
 
-  // Calculate estimated cost for Seedance
+  // Calculate estimated cost for Seedance (BytePlus offline pricing)
   const calculateSeedanceCost = () => {
     const clipCount = seedanceSceneCount;
-    let costPerClip = SEEDANCE_COSTS.basePerClip;
+    let costPerClip = SEEDANCE_COSTS.basePer4s * (SEEDANCE_COSTS.durationMultiplier[seedanceDuration] || 1);
 
     if (seedanceResolution === '480p') {
       costPerClip *= SEEDANCE_COSTS.resolution480p;
@@ -458,6 +471,27 @@ const InputForm: React.FC<InputFormProps> = ({
                   </div>
                 </div>
 
+                {/* Clip Duration */}
+                <div>
+                  <label className="block text-xs font-medium text-neutral-400 mb-2">Clip Duration</label>
+                  <div className="flex gap-2">
+                    {([4, 8, 12] as const).map((dur) => (
+                      <button
+                        key={dur}
+                        type="button"
+                        onClick={() => onSeedanceDurationChange(dur)}
+                        className={`flex-1 py-2 px-3 text-sm rounded border transition-all
+                          ${seedanceDuration === dur
+                            ? 'border-purple-500 bg-purple-800/50 text-white'
+                            : 'border-neutral-600 bg-neutral-800 text-neutral-400 hover:border-neutral-500'
+                          }`}
+                      >
+                        {dur}s
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {/* Sound Effects */}
                 <div>
                   <label className="block text-xs font-medium text-neutral-400 mb-2">Sound FX</label>
@@ -495,7 +529,7 @@ const InputForm: React.FC<InputFormProps> = ({
                   <span className="text-sm font-bold text-purple-300">~${calculateSeedanceCost()}</span>
                 </div>
                 <p className="text-xs text-neutral-500 mt-1">
-                  {seedanceSceneCount} × 4s = {seedanceSceneCount * 4}s video • {seedanceResolution} • {seedanceAudio ? 'With SFX' : 'No SFX'}
+                  {seedanceSceneCount} × {seedanceDuration}s = {seedanceSceneCount * seedanceDuration}s video • {seedanceResolution} • {seedanceAudio ? 'With SFX' : 'No SFX'}
                 </p>
               </div>
             </div>
@@ -578,9 +612,74 @@ const InputForm: React.FC<InputFormProps> = ({
           </div>
         </div>
 
-        {/* Voice Settings Section */}
+        {/* Voice & Audio Settings Section */}
         <div className="border-t border-neutral-700 pt-6">
-          <h3 className="text-lg font-semibold text-neutral-200 mb-4">Voice & Dialogue Settings</h3>
+          <h3 className="text-lg font-semibold text-neutral-200 mb-4">Voice, Language & Audio Settings</h3>
+
+          {/* Language and Background Music Row */}
+          <div className="grid grid-cols-2 gap-4 mb-5">
+            {/* Language Selector */}
+            <div>
+              <label className="block text-sm font-medium text-neutral-300 mb-2">
+                Content Language
+              </label>
+              <select
+                value={language}
+                onChange={(e) => onLanguageChange(e.target.value as ContentLanguage)}
+                className="w-full py-2.5 px-3 bg-neutral-800 border border-neutral-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              >
+                {SUPPORTED_LANGUAGES.map((lang) => (
+                  <option key={lang.code} value={lang.code}>
+                    {lang.label} ({lang.native})
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-neutral-500 mt-1">
+                Dialogue and text will be in this language
+              </p>
+            </div>
+
+            {/* Background Music Toggle */}
+            <div>
+              <label className="block text-sm font-medium text-neutral-300 mb-2">
+                Background Music
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => onBackgroundMusicEnabledChange(true)}
+                  className={`flex-1 py-2.5 px-3 rounded-lg border-2 transition-all flex items-center justify-center gap-2
+                    ${backgroundMusicEnabled
+                      ? 'border-orange-500 bg-orange-900/30 text-white'
+                      : 'border-neutral-600 bg-neutral-800 text-neutral-400 hover:border-neutral-500'
+                    }`}
+                >
+                  <svg className={`w-4 h-4 ${backgroundMusicEnabled ? 'text-orange-400' : 'text-neutral-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
+                  <span className="font-semibold text-sm">Suno AI</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onBackgroundMusicEnabledChange(false)}
+                  className={`flex-1 py-2.5 px-3 rounded-lg border-2 transition-all flex items-center justify-center gap-2
+                    ${!backgroundMusicEnabled
+                      ? 'border-orange-500 bg-orange-900/30 text-white'
+                      : 'border-neutral-600 bg-neutral-800 text-neutral-400 hover:border-neutral-500'
+                    }`}
+                >
+                  <svg className={`w-4 h-4 ${!backgroundMusicEnabled ? 'text-orange-400' : 'text-neutral-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                  </svg>
+                  <span className="font-semibold text-sm">None</span>
+                </button>
+              </div>
+              <p className="text-xs text-neutral-500 mt-1">
+                {backgroundMusicEnabled ? 'AI-generated background music' : 'No background music'}
+              </p>
+            </div>
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             {/* Voice Mode Toggle */}

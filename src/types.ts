@@ -31,9 +31,29 @@ export type VideoModel = "veo-3.1" | "seedance-1.5";
 
 export type SeedanceResolution = "480p" | "720p";
 
+export type SeedanceDuration = 4 | 8 | 12;
+
 export type SeedanceSceneCount = 9 | 15;
 
 export type VoiceMode = 'tts' | 'speech_in_video';
+
+// Supported languages for dialogue/text content
+export const SUPPORTED_LANGUAGES = [
+  { code: 'english', label: 'English', native: 'English' },
+  { code: 'japanese', label: 'Japanese', native: '日本語' },
+  { code: 'chinese', label: 'Chinese (Mandarin)', native: '中文' },
+  { code: 'korean', label: 'Korean', native: '한국어' },
+  { code: 'spanish', label: 'Spanish', native: 'Español' },
+  { code: 'french', label: 'French', native: 'Français' },
+  { code: 'german', label: 'German', native: 'Deutsch' },
+  { code: 'portuguese', label: 'Portuguese', native: 'Português' },
+  { code: 'italian', label: 'Italian', native: 'Italiano' },
+  { code: 'hindi', label: 'Hindi', native: 'हिन्दी' },
+  { code: 'thai', label: 'Thai', native: 'ไทย' },
+  { code: 'arabic', label: 'Arabic', native: 'العربية' },
+] as const;
+
+export type ContentLanguage = typeof SUPPORTED_LANGUAGES[number]['code'];
 
 // All available Gemini TTS voices
 export const GEMINI_VOICES = {
@@ -61,10 +81,14 @@ export interface Character {
   voiceProfile?: string; // Short description for speech-in-video mode
 }
 
-// Dialogue line with speaker
+// Dialogue line with speaker and optional Seedance vocal characteristics
 export interface DialogueLine {
   speaker: string; // Character name or "narrator"
   text: string;
+  // Seedance 1.5 Pro vocal characteristics (for speech_in_video mode)
+  emotionalState?: string; // calm, gentle, restrained, forceful, confident, anxious, joyful, melancholic, angry, surprised, determined
+  tone?: string; // even, soft, low, firm, clear, warm, cold, playful, serious, sarcastic
+  pace?: string; // slow, normal, fast, very slow, measured, rapid
 }
 
 // Character reference for storyboard/video generation
@@ -101,7 +125,12 @@ export interface AppState {
   videoModel: VideoModel;
   seedanceAudio: boolean; // Generate sound effects (additional cost)
   seedanceResolution: SeedanceResolution;
+  seedanceDuration: SeedanceDuration; // 4, 8, or 12 seconds per clip
   // Voice/dialogue settings
   voiceMode: VoiceMode;
   multiCharacter: boolean;
+  // Language for dialogue/text content
+  language: ContentLanguage;
+  // Background music toggle
+  backgroundMusicEnabled: boolean;
 }
