@@ -214,9 +214,8 @@ export async function GET(request: NextRequest) {
     // Map BytePlus status to our status format
     // BytePlus statuses: queued, running, succeeded, failed, expired
     if (taskData.status === 'succeeded') {
-      // Extract video URL from response
-      const videoContent = taskData.content?.find((c: { type: string }) => c.type === 'video');
-      const byteplusVideoUrl = videoContent?.video?.url;
+      // Extract video URL from response - BytePlus returns content.video_url directly
+      const byteplusVideoUrl = taskData.content?.video_url;
 
       if (!byteplusVideoUrl) {
         console.error('[BytePlus] Video URL not found in response:', JSON.stringify(taskData, null, 2));
