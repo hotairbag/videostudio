@@ -9,12 +9,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 });
   }
 
-  // Allow proxying from R2 and known video providers (Seedance/Kie.ai)
+  // Allow proxying from R2 and known video providers
   const allowedDomains = [
     'video-studio.jarwater.com',
     'kieai.erweima.ai',
     'api.klingai.com',
     'cdn.klingai.com',
+    'volces.com', // BytePlus/Seedance video storage
   ];
 
   try {
