@@ -449,6 +449,15 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
 
     setIsConfirming(true);
     try {
+      // Check if frames already exist (user might be returning from production)
+      const expectedFrameCount = project.videoModel === 'seedance-1.5' && project.seedanceSceneCount === 15 ? 15 : 9;
+      if (frames && frames.length >= expectedFrameCount) {
+        // Frames already exist, just go to production without re-processing
+        await updateProjectStatus({ projectId, status: 'production' });
+        setIsConfirming(false);
+        return;
+      }
+
       // Slice first grid (3x3 = 9 frames)
       const frames1 = await sliceGridImage(storyboard1.imageUrl, project.aspectRatio as AspectRatio);
 
