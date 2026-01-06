@@ -181,7 +181,7 @@ The Suno music API (`src/app/api/music/generate/route.ts`) detects content type 
 - **Dual storyboard generation**: 3x3 grid (scenes 1-9) + 3x2 grid (scenes 10-15)
 - Second grid uses first grid as style reference for visual continuity
 - Images uploaded to Cloudflare R2 before Seedance API call
-- **Cost estimate**: ~$3.00 for 15 clips at 720p without audio, ~$6.00 with audio (flex pricing)
+- **Cost estimate**: ~$0.75 for 15 clips at 720p without audio, ~$1.50 with audio (flex pricing)
 
 #### Common Settings
 - NO dialogue in generated videos (voiceover via Gemini TTS)

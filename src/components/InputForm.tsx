@@ -37,12 +37,13 @@ interface InputFormProps {
 }
 
 // Cost estimates for Seedance via BytePlus (flex/offline pricing with 50% discount)
-// Based on: $0.6/M tokens (no audio) and $1.2/M tokens (with audio)
-// Token consumption: ~330K tokens per 4s 720p video
+// Token formula: (Width × Height × FPS × Duration) / 1024
+// 720p 4s = 86,400 tokens, 480p 4s = ~39,000 tokens
+// Flex pricing: $0.6/M tokens (no audio), $1.2/M tokens (with audio)
 const SEEDANCE_COSTS = {
-  basePer4s: 0.20, // Base cost per 4s at 720p without audio (flex pricing)
+  basePer4s: 0.05, // Base cost per 4s at 720p without audio (flex pricing)
   audioMultiplier: 2, // 2x for audio generation ($1.2 vs $0.6 per M tokens)
-  resolution480p: 0.5, // 50% cheaper for 480p (half the pixels = half tokens)
+  resolution480p: 0.45, // ~45% of 720p cost (39K vs 86K tokens)
   durationMultiplier: { 4: 1, 8: 2, 12: 3 } as Record<number, number>,
 };
 
