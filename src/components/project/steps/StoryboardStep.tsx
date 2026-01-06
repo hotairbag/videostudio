@@ -68,15 +68,25 @@ export default function StoryboardStep({
             <h3 className="text-sm font-medium text-neutral-400 text-center">Scenes 1-9</h3>
           )}
           <div
-            className="bg-neutral-800 rounded-xl overflow-hidden border border-neutral-700 cursor-zoom-in hover:border-neutral-600 transition-colors"
-            onClick={() => setSelectedImage(storyboardUrl)}
+            className={`relative bg-neutral-800 rounded-xl overflow-hidden border border-neutral-700 transition-colors ${
+              isGeneratingStoryboard ? 'cursor-wait' : 'cursor-zoom-in hover:border-neutral-600'
+            }`}
+            onClick={() => !isGeneratingStoryboard && setSelectedImage(storyboardUrl)}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={storyboardUrl}
               alt="Storyboard Grid 1"
-              className="w-full h-auto"
+              className={`w-full h-auto transition-opacity ${isGeneratingStoryboard ? 'opacity-40' : ''}`}
             />
+            {/* Regenerating overlay */}
+            {isGeneratingStoryboard && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-neutral-900/60">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-500 mb-3"></div>
+                <p className="text-white font-medium">Regenerating storyboard...</p>
+                <p className="text-neutral-400 text-sm mt-1">This may take a minute</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -114,10 +124,22 @@ export default function StoryboardStep({
           disabled={isGeneratingStoryboard || isConfirming}
           className="px-6 py-2.5 rounded-lg bg-neutral-700 hover:bg-neutral-600 text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          Regenerate
+          {isGeneratingStoryboard ? (
+            <>
+              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Regenerating...
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Regenerate
+            </>
+          )}
         </button>
 
         <button

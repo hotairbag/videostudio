@@ -407,16 +407,26 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
 
     try {
       const totalScenes = project.videoModel === 'seedance-1.5' ? (project.seedanceSceneCount ?? 9) : 9;
+      console.log('[Regenerate] Generating new storyboard...', { totalScenes, aspectRatio: project.aspectRatio });
+
       const storyboardBase64 = await generateStoryboard(fullScript, flattenRefImages(refImagesRef.current), project.aspectRatio as AspectRatio, totalScenes);
+      console.log('[Regenerate] Storyboard generated, uploading to R2...');
+
       const storyboardUrl = await uploadImageToR2(storyboardBase64);
+      console.log('[Regenerate] Uploaded to R2:', storyboardUrl);
 
       if (storyboard1) {
+        console.log('[Regenerate] Updating storyboard in Convex...');
         await updateStoryboard({ storyboardId: storyboard1._id, imageUrl: storyboardUrl });
+        console.log('[Regenerate] Storyboard updated successfully');
+      } else {
+        console.warn('[Regenerate] No storyboard1 found to update');
       }
 
       setIsGeneratingStoryboard1(false);
     } catch (error) {
-      console.error(error);
+      console.error('[Regenerate] Error:', error);
+      alert(`Failed to regenerate storyboard: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setIsGeneratingStoryboard1(false);
     }
   };
