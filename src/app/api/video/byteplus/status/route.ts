@@ -225,22 +225,13 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // Upload to R2 for CORS support
-      try {
-        const r2VideoUrl = await uploadVideoToR2(byteplusVideoUrl, taskId);
-        console.log(`[BytePlus] Video proxied to R2: ${r2VideoUrl}`);
-        return NextResponse.json({
-          status: 'completed',
-          videoUrl: r2VideoUrl
-        });
-      } catch (proxyError) {
-        console.error('[BytePlus] Failed to proxy video to R2:', proxyError);
-        // Fall back to original URL if proxy fails
-        return NextResponse.json({
-          status: 'completed',
-          videoUrl: byteplusVideoUrl
-        });
-      }
+      // Upload to R2 for CORS support - BytePlus URLs don't work directly in browser
+      const r2VideoUrl = await uploadVideoToR2(byteplusVideoUrl, taskId);
+      console.log(`[BytePlus] Video saved to R2: ${r2VideoUrl}`);
+      return NextResponse.json({
+        status: 'completed',
+        videoUrl: r2VideoUrl
+      });
     } else if (taskData.status === 'failed') {
       return NextResponse.json({
         status: 'failed',
