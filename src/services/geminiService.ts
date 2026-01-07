@@ -507,17 +507,66 @@ export const generateScript = async (
   }
 };
 
+/**
+ * Extract static scene description from visualDescription, removing camera movements
+ * Camera movements are for video generation, not storyboard images
+ */
+const extractStaticDescription = (visualDescription: string): string => {
+  let description = visualDescription;
+
+  // Remove [cut] tags and everything after them (Veo multi-shot format)
+  description = description.split('[cut]')[0].trim();
+
+  // Remove "Shot 1:" / "Shot 2:" prefixes (Seedance multi-shot format)
+  description = description.replace(/Shot \d+:\s*/gi, '');
+
+  // Remove camera movement instructions that confuse image generation
+  const cameraMovementPatterns = [
+    /\b(dolly[- ]?(in|out|forward|back(ward)?)?)\b/gi,
+    /\b(pan(ning)?[- ]?(left|right|up|down)?)\b/gi,
+    /\b(tilt(ing)?[- ]?(up|down)?)\b/gi,
+    /\b(track(ing)?[- ]?(left|right|in|out)?)\b/gi,
+    /\b(zoom(ing)?[- ]?(in|out)?)\b/gi,
+    /\b(push[- ]?in)\b/gi,
+    /\b(pull[- ]?(out|back))\b/gi,
+    /\b(crane[- ]?(up|down|shot)?)\b/gi,
+    /\b(jib[- ]?(up|down)?)\b/gi,
+    /\b(steadicam)\b/gi,
+    /\b(handheld)\b/gi,
+    /\b(follow(ing)?[- ]?shot)\b/gi,
+    /\b(surround(ing)?[- ]?shot)\b/gi,
+    /\b(orbit(ing)?)\b/gi,
+    /\b(arc(ing)?[- ]?(left|right)?)\b/gi,
+    /\b(camera\s+(slowly\s+)?(moves?|pans?|tilts?|tracks?|zooms?|dollies?|pushes?|pulls?|cranes?|orbits?|arcs?|follows?)[^,.]*)/gi,
+  ];
+
+  for (const pattern of cameraMovementPatterns) {
+    description = description.replace(pattern, '');
+  }
+
+  // Clean up extra whitespace and punctuation
+  description = description
+    .replace(/\s+/g, ' ')
+    .replace(/\s*,\s*,/g, ',')
+    .replace(/\s*\.\s*\./g, '.')
+    .replace(/^\s*[,.\s]+/, '')
+    .replace(/[,.\s]+\s*$/, '')
+    .trim();
+
+  return description;
+};
+
 export const generateStoryboard = async (script: Script, refImages?: string[], aspectRatio: AspectRatio = '16:9', totalScenes: number = 9): Promise<string> => {
   const ai = getClient();
 
   // For 15-scene mode, first grid only shows scenes 1-9
   const scenesToShow = script.scenes.slice(0, 9);
 
-  // Strip [cut] tags from visualDescription for storyboard - cuts are only for Veo video generation
-  // Use only the base scene description (before first [cut]) for each panel
+  // Extract STATIC scene descriptions, stripping camera movements that are meant for video
   const sceneDescriptions = scenesToShow.map((s, i) => {
-    const baseDescription = s.visualDescription.split('[cut]')[0].trim();
-    return `Panel ${i + 1} (${s.cameraShot}): ${baseDescription}`;
+    const staticDescription = extractStaticDescription(s.visualDescription);
+    // Don't include cameraShot in storyboard - it contains video-specific camera movements
+    return `Panel ${i + 1}: ${staticDescription}`;
   }).join("\n");
 
   // Build explicit layout instructions based on aspect ratio
@@ -633,10 +682,11 @@ export const generateStoryboard2 = async (
     throw new Error(`Expected 6 scenes for second grid, got ${scenes10to15.length}`);
   }
 
-  // Strip [cut] tags from visualDescription for storyboard
+  // Extract STATIC scene descriptions, stripping camera movements that are meant for video
   const sceneDescriptions = scenes10to15.map((s, i) => {
-    const baseDescription = s.visualDescription.split('[cut]')[0].trim();
-    return `Panel ${i + 1} (${s.cameraShot}): ${baseDescription}`;
+    const staticDescription = extractStaticDescription(s.visualDescription);
+    // Don't include cameraShot in storyboard - it contains video-specific camera movements
+    return `Panel ${i + 1}: ${staticDescription}`;
   }).join("\n");
 
   // Determine grid aspect ratio based on panel aspect ratio
