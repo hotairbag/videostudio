@@ -36,6 +36,16 @@ const safetySettings: SafetySetting[] = [
   { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE },
 ];
 
+// Timeout wrapper for API calls
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, context: string): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${context} timed out after ${timeoutMs / 1000} seconds. Please try again.`)), timeoutMs)
+    )
+  ]);
+};
+
 // Enhanced error handling for API calls
 const handleApiError = (error: unknown, context: string): never => {
   console.error(`[${context}] API Error:`, error);
@@ -461,24 +471,36 @@ export const generateScript = async (
       rootProperties.narratorVoice = { type: Type.STRING };
     }
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
-      contents: { parts },
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        safetySettings,
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: rootProperties,
-          required: multiCharacter ? ["title", "scenes", "characters"] : ["title", "scenes", "narratorVoice"],
+    const response = await withTimeout(
+      ai.models.generateContent({
+        model: "gemini-3-pro-preview",
+        contents: { parts },
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          safetySettings,
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: rootProperties,
+            required: multiCharacter ? ["title", "scenes", "characters"] : ["title", "scenes", "narratorVoice"],
+          },
         },
-      },
-    });
+      }),
+      60000, // 60 second timeout for script generation
+      "Script generation"
+    );
 
     const text = response.text;
     if (!text) throw new Error("No script generated");
-    return JSON.parse(text) as Script;
+
+    try {
+      return JSON.parse(text) as Script;
+    } catch (parseError) {
+      console.error("[Script generation] JSON parse failed. Response length:", text.length);
+      console.error("[Script generation] First 500 chars:", text.substring(0, 500));
+      console.error("[Script generation] Last 500 chars:", text.substring(text.length - 500));
+      throw new Error(`Script generation returned invalid JSON (length: ${text.length}). The response may have been truncated. Please try again with a simpler prompt.`);
+    }
   } catch (error) {
     handleApiError(error, "Script generation");
     throw error; // Unreachable - handleApiError always throws
@@ -565,17 +587,21 @@ export const generateStoryboard = async (script: Script, refImages?: string[], a
   }
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-pro-image-preview",
-      contents: { parts },
-      config: {
-        safetySettings,
-        imageConfig: {
-          aspectRatio: aspectRatio,
-          imageSize: "2K"
+    const response = await withTimeout(
+      ai.models.generateContent({
+        model: "gemini-3-pro-image-preview",
+        contents: { parts },
+        config: {
+          safetySettings,
+          imageConfig: {
+            aspectRatio: aspectRatio,
+            imageSize: "2K"
+          }
         }
-      }
-    });
+      }),
+      120000, // 120 second timeout for storyboard generation
+      "Storyboard generation"
+    );
 
     for (const part of response.candidates?.[0]?.content?.parts || []) {
       if (part.inlineData) {
@@ -701,17 +727,21 @@ export const generateStoryboard2 = async (
     // Use dynamic aspect ratio based on panel orientation:
     // - 16:9 panels → 21:9 ultrawide (3×16 : 2×9 = 48:18 ≈ 21:9)
     // - 9:16 panels → 4:5 tall portrait (3×9 : 2×16 = 27:32 ≈ 4:5)
-    const response = await ai.models.generateContent({
-      model: "gemini-3-pro-image-preview",
-      contents: { parts },
-      config: {
-        safetySettings,
-        imageConfig: {
-          aspectRatio: gridAspectRatio,
-          imageSize: "2K"
+    const response = await withTimeout(
+      ai.models.generateContent({
+        model: "gemini-3-pro-image-preview",
+        contents: { parts },
+        config: {
+          safetySettings,
+          imageConfig: {
+            aspectRatio: gridAspectRatio,
+            imageSize: "2K"
+          }
         }
-      }
-    });
+      }),
+      120000, // 120 second timeout for storyboard generation
+      "Second storyboard generation"
+    );
 
     for (const part of response.candidates?.[0]?.content?.parts || []) {
       if (part.inlineData) {
@@ -1055,19 +1085,23 @@ const generateSingleVoiceAudio = async (
   text: string,
   voiceName: GeminiVoice
 ): Promise<Blob> => {
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash-preview-tts",
-    contents: [{ parts: [{ text }] }],
-    config: {
-      safetySettings,
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName },
+  const response = await withTimeout(
+    ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text }] }],
+      config: {
+        safetySettings,
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName },
+          },
         },
       },
-    },
-  });
+    }),
+    60000, // 60 second timeout for TTS
+    "TTS audio generation"
+  );
 
   const audioPart = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
   if (!audioPart?.data) throw new Error("No audio data in response");
