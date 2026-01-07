@@ -46,7 +46,7 @@ export default function Home() {
         seedanceResolution: '480p',
         seedanceDuration: 4,
         seedanceSceneCount: 15,
-        voiceMode: 'characters',
+        voiceMode: 'speech_in_video',
         backgroundMusicEnabled: false,
       });
 
