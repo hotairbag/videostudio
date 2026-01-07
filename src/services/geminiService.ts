@@ -473,7 +473,7 @@ export const generateScript = async (
 
     const response = await withTimeout(
       ai.models.generateContent({
-        model: "gemini-3-pro-preview",
+        model: "gemini-3-flash-preview",
         contents: { parts },
         config: {
           systemInstruction,
