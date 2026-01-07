@@ -42,12 +42,12 @@ export default function Home() {
         aspectRatio: '9:16',
         videoModel: 'seedance-1.5',
         enableCuts: true,
-        seedanceAudio: false,
+        seedanceAudio: true,
         seedanceResolution: '480p',
         seedanceDuration: 4,
         seedanceSceneCount: 15,
-        voiceMode: 'speech_in_video',
-        backgroundMusicEnabled: true,
+        voiceMode: 'characters',
+        backgroundMusicEnabled: false,
       });
 
       router.push(`/project/${projectId}`);

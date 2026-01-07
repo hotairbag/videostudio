@@ -893,11 +893,13 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
         <StoryboardStep
           storyboardUrl={storyboard1?.imageUrl || null}
           storyboardUrl2={storyboard2?.imageUrl || null}
-          isGeneratingStoryboard={isGeneratingStoryboard1 || isGeneratingStoryboard2}
+          isRegeneratingGrid1={isGeneratingStoryboard1}
+          isRegeneratingGrid2={isGeneratingStoryboard2}
           isConfirming={isConfirming}
           videoModel={project.videoModel as VideoModel}
           seedanceSceneCount={project.seedanceSceneCount}
-          onRegenerate={handleRegenerateStoryboard1}
+          onRegenerateGrid1={handleRegenerateStoryboard1}
+          onRegenerateGrid2={handleRegenerateStoryboard2}
           onConfirm={handleConfirmStoryboard}
         />
       )}
