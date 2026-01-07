@@ -486,7 +486,7 @@ export const generateScript = async (
           },
         },
       }),
-      60000, // 60 second timeout for script generation
+      120000, // 120 second timeout for script generation (15 scenes can take a while)
       "Script generation"
     );
 
