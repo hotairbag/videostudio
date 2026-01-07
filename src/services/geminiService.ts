@@ -486,11 +486,76 @@ export const generateScript = async (
       "Script generation"
     );
 
-    const text = response.text;
-    if (!text) throw new Error("No script generated");
+    const rawText = response.text;
+    if (!rawText) throw new Error("No script generated");
+
+    // Strip markdown code fences if present (```json ... ``` or ``` ... ```)
+    let text = rawText.trim();
+    if (text.startsWith('```')) {
+      // Remove opening fence (```json or ```)
+      const firstNewline = text.indexOf('\n');
+      if (firstNewline !== -1) {
+        text = text.substring(firstNewline + 1);
+      }
+      // Remove closing fence
+      if (text.endsWith('```')) {
+        text = text.substring(0, text.length - 3).trim();
+      }
+    }
+
+    console.log(`[Script generation] Response length: ${rawText.length}, cleaned: ${text.length}`);
 
     try {
-      return JSON.parse(text) as Script;
+      let parsed = JSON.parse(text);
+
+      // Handle array responses from Gemini
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Check if array contains scene objects directly (has id, visualDescription)
+        if (parsed[0].id !== undefined && parsed[0].visualDescription) {
+          console.log("[Script generation] Response is array of scenes, reconstructing script object");
+          // Extract narratorVoice from first scene if present
+          const narratorVoice = parsed[0].narratorVoice || 'Zephyr';
+          // Clean scenes - remove narratorVoice from individual scenes
+          const scenes = parsed.map((scene: Record<string, unknown>) => {
+            const { narratorVoice: _, ...rest } = scene;
+            return rest;
+          });
+          parsed = {
+            title: 'Generated Script',
+            style: 'cinematic',
+            narratorVoice,
+            scenes,
+          };
+        } else {
+          // Array contains a script object, extract first element
+          console.log("[Script generation] Response was wrapped in array, extracting first element");
+          parsed = parsed[0];
+        }
+      }
+
+      // Validate and extract script structure (handle various response formats)
+      let script: Script;
+      if (parsed.scenes && Array.isArray(parsed.scenes)) {
+        // Direct format: {title, scenes, ...}
+        script = parsed as Script;
+      } else if (parsed.script && parsed.script.scenes) {
+        // Wrapped format: {script: {title, scenes, ...}}
+        script = parsed.script as Script;
+      } else if (parsed.response && parsed.response.scenes) {
+        // Another wrapped format: {response: {title, scenes, ...}}
+        script = parsed.response as Script;
+      } else {
+        console.error("[Script generation] Unexpected JSON structure:", JSON.stringify(parsed).substring(0, 500));
+        throw new Error("Script JSON missing 'scenes' array");
+      }
+
+      // Validate scenes array
+      if (!script.scenes || script.scenes.length === 0) {
+        throw new Error("Script has no scenes");
+      }
+
+      console.log(`[Script generation] Successfully parsed ${script.scenes.length} scenes`);
+      return script;
     } catch (parseError) {
       console.error("[Script generation] JSON parse failed. Response length:", text.length);
       console.error("[Script generation] First 500 chars:", text.substring(0, 500));
@@ -681,68 +746,47 @@ export const generateStoryboard2 = async (
   // Extract STATIC scene descriptions, stripping camera movements that are meant for video
   const sceneDescriptions = scenes10to15.map((s, i) => {
     const staticDescription = extractStaticDescription(s.visualDescription);
-    // Don't include cameraShot in storyboard - it contains video-specific camera movements
-    return `Panel ${i + 1}: ${staticDescription}`;
+    return `${i + 1}. ${staticDescription}`;
   }).join("\n");
 
   // Determine grid aspect ratio based on panel aspect ratio
-  // For 16:9 panels: 3×2 grid = (3×16):(2×9) = 48:18 ≈ 8:3 (ultrawide landscape)
-  // For 9:16 panels: 3×2 grid = (3×9):(2×16) = 27:32 (tall portrait)
+  // For 9:16 panels in 3x2 grid = 27:32 (0.84) → closest is 4:5 (0.8)
+  // For 16:9 panels in 3x2 grid = 48:18 (2.67) → closest is 16:9 (1.78)
   const isPortrait = aspectRatio === '9:16';
-  // For the API config - use closest supported aspect ratios
-  // 9:16 panels in 3x2 grid = 27:32 (0.84) → closest is 4:5 (0.8)
-  // 16:9 panels in 3x2 grid = 48:18 (2.67) → closest is 16:9 (1.78) or could use wider
   const gridAspectRatio = isPortrait ? '4:5' : '16:9';
 
-  // Build layout instructions based on aspect ratio
-  const layoutInstructions = isPortrait
-    ? `CRITICAL PANEL SHAPE - PORTRAIT MODE:
-    - The overall grid image should be TALLER than it is WIDE (portrait orientation).
-    - Each of the 6 panels must be VERTICAL/PORTRAIT (taller than wide), like a phone screen or TikTok video.
-    - Panel dimensions: each panel is 9 units wide × 16 units tall (9:16 aspect ratio).
-    - Grid dimensions: 3 columns × 2 rows = 27 units wide × 32 units tall total.
-    - Think of it as 6 vertical smartphone screens arranged in a 3×2 pattern.`
-    : `CRITICAL PANEL SHAPE - LANDSCAPE MODE:
-    - The overall grid image should be MUCH WIDER than it is TALL (ultrawide landscape).
-    - Each of the 6 panels must be HORIZONTAL/LANDSCAPE (wider than tall), like a movie screen.
-    - Panel dimensions: each panel is 16 units wide × 9 units tall (16:9 aspect ratio).
-    - Grid dimensions: 3 columns × 2 rows = 48 units wide × 18 units tall total.
-    - Think of it as 6 widescreen TV frames arranged in a 3×2 pattern.`;
+  // Build panel proportions description
+  const panelProportions = isPortrait
+    ? 'true 9:16 portrait proportions (taller than wide)'
+    : 'true 16:9 landscape proportions (wider than tall)';
 
-  // Prompt with grid structure as TOP PRIORITY
-  const prompt = `
-    Art Style: ${script.style}
+  // Build the prompt following the simpler, proven format
+  const prompt = `Create one single image in aspect ratio ${gridAspectRatio}.
 
-    Create a professional 3×2 storyboard grid containing exactly 6 panels for the following story continuation.
-    These are scenes 10-15 of a 15-scene story.
+Attached images + purpose:
+The attached reference images show the same characters/subjects from earlier in this story.
+Use them as exact reference for character faces, hair, outfits, proportions, and overall design.
+Keep all characters perfectly consistent with these references in every panel.
 
-    ${layoutInstructions}
+Layout (must follow):
+The image must contain a perfectly centered 3×2 grid with thin clean gutters.
+Each of the 6 cells must be ${panelProportions} (no stretching).
+The grid should span the full width of the ${gridAspectRatio} canvas, with slight even padding at the top and bottom to keep the panel proportions correct.
+Panel order: top row = 1, 2, 3 ; bottom row = 4, 5, 6.
 
-    GRID STRUCTURE - THIS IS THE MOST IMPORTANT REQUIREMENT:
-    - The 6 panels must fill the ENTIRE image edge-to-edge with NO gaps, borders, or white space.
-    - Layout: 3 columns × 2 rows = 6 panels total.
-    - Each panel must be EXACTLY 1/3 of the total width and EXACTLY 1/2 of the total height.
-    - ALL 6 PANELS MUST BE IDENTICAL IN SIZE - no exceptions.
-    - This is NOT a manga or comic book - NEVER vary panel sizes for dramatic effect.
-    - ABSOLUTELY NO artistic panel layouts, overlapping panels, or irregular shapes.
-    - NO margins, padding, or frames around or between panels.
-    - The panels must touch each other directly - seamless grid like a 3×2 photo grid.
-    - Think of this as 6 photos arranged in a perfect 3×2 grid where every cell is exactly the same size.
-    - Top row: panels 1, 2, 3 (left to right)
-    - Bottom row: panels 4, 5, 6 (left to right)
-    - Each panel is a rectangle of IDENTICAL dimensions - uniform like a spreadsheet grid.
+Style / baseline look:
+${script.style}. Clean composition, cinematic lighting, subtle bloom, crisp highlights, controlled shadows, polished color grading. Cohesive palette across all panels matching the reference images.
 
-    STYLE CONSISTENCY (match the reference images):
-    - Match the art style, character designs, and color palette from the reference images.
-    - The reference images show the same characters/subjects from earlier in this story.
-    - Use the same rendering style (line work, shading, colors, proportions).
+Hard rules:
+All characters must remain 100% consistent with their reference images across all panels (no redesigns, no outfit changes, no hairstyle changes).
+No new characters fully shown (background silhouettes ok).
+No text, no logos, no watermarks.
+Correct anatomy and hands (no extra fingers), sharp focus on faces when close-up.
 
-    NARRATIVE:
-    - Panel 6 (bottom right) is the FINAL scene of the entire story - it should feel like a conclusion.
-    - Panels 1-5 should continue building the narrative towards the ending.
+Story (Panels 1–6) — Final act of a 15-scene story:
+${sceneDescriptions}
 
-    Scenes:
-    ${sceneDescriptions}
+Panel 6 is the FINAL scene - it should feel like a conclusion with strong cinematic atmosphere.
   `;
 
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [{ text: prompt }];
@@ -786,7 +830,7 @@ export const generateStoryboard2 = async (
           }
         }
       }),
-      120000, // 120 second timeout for storyboard generation
+      180000, // 180 second timeout for second storyboard (needs more time with style reference)
       "Second storyboard generation"
     );
 

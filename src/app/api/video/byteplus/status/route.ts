@@ -128,12 +128,16 @@ async function uploadVideoToR2(videoUrl: string, taskId: string): Promise<string
   }
 
   // Fetch video from BytePlus
+  const fetchStart = Date.now();
   const videoRes = await fetch(videoUrl);
   if (!videoRes.ok) {
     throw new Error(`Failed to fetch video from BytePlus: ${videoRes.status}`);
   }
 
   const videoData = new Uint8Array(await videoRes.arrayBuffer());
+  const fetchTime = Date.now() - fetchStart;
+  const sizeMB = (videoData.length / 1024 / 1024).toFixed(2);
+  console.log(`[BytePlus→Worker] Downloaded ${sizeMB}MB in ${fetchTime}ms (${(parseFloat(sizeMB) / (fetchTime / 1000)).toFixed(1)} MB/s)`);
 
   // Determine file extension from URL or content type
   const urlPath = new URL(videoUrl).pathname;
@@ -155,6 +159,7 @@ async function uploadVideoToR2(videoUrl: string, taskId: string): Promise<string
     { accessKeyId, secretAccessKey }
   );
 
+  const uploadStart = Date.now();
   const uploadRes = await fetch(r2Url, {
     method: 'PUT',
     headers: signedHeaders,
@@ -165,6 +170,10 @@ async function uploadVideoToR2(videoUrl: string, taskId: string): Promise<string
     const errorText = await uploadRes.text();
     throw new Error(`R2 upload failed: ${uploadRes.status} - ${errorText}`);
   }
+
+  const uploadTime = Date.now() - uploadStart;
+  console.log(`[Worker→R2] Uploaded ${sizeMB}MB in ${uploadTime}ms (${(parseFloat(sizeMB) / (uploadTime / 1000)).toFixed(1)} MB/s)`);
+  console.log(`[Total] BytePlus→R2 transfer: ${fetchTime + uploadTime}ms for ${sizeMB}MB`);
 
   // Return public URL
   return `https://${R2_CUSTOM_DOMAIN}/${filename}`;

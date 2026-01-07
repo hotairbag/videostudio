@@ -13,6 +13,7 @@ import { generateScript, generateStoryboard, generateStoryboard2, generateMaster
 import { sliceGridImage, sliceGrid3x2Image } from '@/utils/imageUtils';
 import { useTaskPolling, useStartVideoTask, useStartMusicTask } from '@/hooks/useTaskPolling';
 import { AspectRatio, VideoModel, SeedanceResolution, SeedanceDuration, SeedanceSceneCount, Script, VoiceMode, Character, DialogueLine, ReferenceImages, Scene, ContentLanguage } from '@/types';
+import { useToast } from '@/components/ui/Toast';
 
 /**
  * Build the full prompt for Seedance video generation
@@ -105,6 +106,7 @@ interface VideoStudioWithConvexProps {
 }
 
 export default function VideoStudioWithConvex({ projectId, project }: VideoStudioWithConvexProps) {
+  const { showError } = useToast();
   const [apiKeyReady, setApiKeyReady] = useState(() => !!getApiKey());
   const [manualKey, setManualKey] = useState('');
 
@@ -328,23 +330,25 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
 
       localScriptRef.current = generatedScript;
 
-      // Save script to Convex
-      await createScript({
+      // Save script to Convex - ensure all required fields are valid strings
+      const scriptData = {
         projectId,
-        title: generatedScript.title,
-        style: generatedScript.style,
+        title: generatedScript.title || 'Untitled',
+        style: generatedScript.style || 'cinematic',
         narratorVoice: generatedScript.narratorVoice,
         characters: generatedScript.characters ? JSON.stringify(generatedScript.characters) : undefined,
         scenes: generatedScript.scenes.map((s, idx) => ({
           sceneNumber: idx + 1,
-          timeRange: s.timeRange || `Scene ${idx + 1}`,
-          visualDescription: s.visualDescription,
-          audioDescription: s.audioDescription || '',
-          cameraShot: s.cameraShot || s.cinematicElements || '',
-          voiceoverText: s.voiceoverText,
+          timeRange: String(s.timeRange || `Scene ${idx + 1}`),
+          visualDescription: String(s.visualDescription || ''),
+          audioDescription: String(s.audioDescription || ''),
+          cameraShot: String(s.cameraShot || s.cinematicElements || 'Medium Shot'),
+          voiceoverText: String(s.voiceoverText || ''),
           dialogue: s.dialogue ? JSON.stringify(s.dialogue) : undefined,
         })),
-      });
+      };
+      console.log('[createScript] Saving script with', scriptData.scenes.length, 'scenes');
+      await createScript(scriptData);
 
       setIsGeneratingScript(false);
       setIsGeneratingStoryboard1(true);
@@ -393,7 +397,7 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
       }
     } catch (error) {
       console.error(error);
-      alert("Generation failed. See console for details.");
+      showError("Generation failed. See console for details.");
       setIsGeneratingScript(false);
       setIsGeneratingStoryboard1(false);
       setIsGeneratingStoryboard2(false);
@@ -426,7 +430,7 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
       setIsGeneratingStoryboard1(false);
     } catch (error) {
       console.error('[Regenerate] Error:', error);
-      alert(`Failed to regenerate storyboard: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      showError(`Failed to regenerate storyboard: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setIsGeneratingStoryboard1(false);
     }
   };
@@ -539,7 +543,7 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
       await updateProjectStatus({ projectId, status: 'production' });
     } catch (error) {
       console.error("Failed to process storyboard:", error);
-      alert("Could not process storyboard grid.");
+      showError("Could not process storyboard grid.");
     } finally {
       setIsConfirming(false);
     }
@@ -608,7 +612,7 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
       }
     } catch (error) {
       console.error(error);
-      alert(`Failed to generate video for scene ${sceneId}`);
+      showError(`Failed to generate video for scene ${sceneId}`);
     } finally {
       setGeneratingVideoIds(prev => prev.filter(id => id !== sceneId));
     }
@@ -653,7 +657,7 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
       setIsGeneratingAudio(false);
     } catch (error) {
       console.error(error);
-      alert("Audio generation failed");
+      showError("Audio generation failed");
       setIsGeneratingAudio(false);
     }
   };
@@ -668,7 +672,7 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
       setIsGeneratingMusic(false);
     } catch (error) {
       console.error(error);
-      alert("Background music generation failed");
+      showError("Background music generation failed");
       setIsGeneratingMusic(false);
     }
   };
@@ -787,7 +791,7 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
       }
     } catch (error) {
       console.error("Full movie generation error", error);
-      alert("An error occurred during full movie generation.");
+      showError("An error occurred during full movie generation.");
     } finally {
       setIsGeneratingFullMovie(false);
     }
