@@ -44,6 +44,7 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'chinese', label: 'Chinese (Mandarin)', native: '中文' },
   { code: 'korean', label: 'Korean', native: '한국어' },
   { code: 'spanish', label: 'Spanish', native: 'Español' },
+  { code: 'indonesian', label: 'Indonesian', native: 'Bahasa Indonesia' },
   { code: 'french', label: 'French', native: 'Français' },
   { code: 'german', label: 'German', native: 'Deutsch' },
   { code: 'portuguese', label: 'Portuguese', native: 'Português' },
@@ -52,6 +53,10 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'thai', label: 'Thai', native: 'ไทย' },
   { code: 'arabic', label: 'Arabic', native: 'العربية' },
 ] as const;
+
+// Languages supported by Seedance for speech_in_video mode
+// Seedance supports: English, Mandarin, Japanese, Korean, Spanish, Indonesian
+export const SEEDANCE_SPEECH_LANGUAGES = ['english', 'chinese', 'japanese', 'korean', 'spanish', 'indonesian'] as const;
 
 export type ContentLanguage = typeof SUPPORTED_LANGUAGES[number]['code'];
 

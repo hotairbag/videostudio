@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { fileToBase64 } from '@/utils/imageUtils';
-import { AspectRatio, VideoModel, SeedanceResolution, SeedanceDuration, SeedanceSceneCount, VoiceMode, ReferenceImages, ContentLanguage, SUPPORTED_LANGUAGES } from '@/types';
+import { AspectRatio, VideoModel, SeedanceResolution, SeedanceDuration, SeedanceSceneCount, VoiceMode, ReferenceImages, ContentLanguage, SUPPORTED_LANGUAGES, SEEDANCE_SPEECH_LANGUAGES } from '@/types';
 
 interface CharacterRefState {
   name: string;
@@ -92,6 +92,15 @@ const InputForm: React.FC<InputFormProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Reset language to English if current language not supported by Seedance speech_in_video
+  useEffect(() => {
+    if (videoModel === 'seedance-1.5' && voiceMode === 'speech_in_video') {
+      if (!SEEDANCE_SPEECH_LANGUAGES.includes(language as typeof SEEDANCE_SPEECH_LANGUAGES[number])) {
+        onLanguageChange('english');
+      }
+    }
+  }, [videoModel, voiceMode, language, onLanguageChange]);
 
   const handleStyleRefChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -557,17 +566,30 @@ const InputForm: React.FC<InputFormProps> = ({
 
                 {/* Language */}
                 <div className="mb-4">
-                  <label className="text-xs text-neutral-400 mb-2 block">Language</label>
+                  <label className="text-xs text-neutral-400 mb-2 block">
+                    Language
+                    {isSeedance && voiceMode === 'speech_in_video' && (
+                      <span className="text-neutral-500 ml-1">(Seedance supported)</span>
+                    )}
+                  </label>
                   <select
                     value={language}
                     onChange={(e) => onLanguageChange(e.target.value as ContentLanguage)}
                     className="w-full py-2 px-3 bg-neutral-700 border border-neutral-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
                   >
-                    {SUPPORTED_LANGUAGES.map((lang) => (
-                      <option key={lang.code} value={lang.code}>
-                        {lang.label} ({lang.native})
-                      </option>
-                    ))}
+                    {SUPPORTED_LANGUAGES
+                      .filter((lang) => {
+                        // If Seedance + speech_in_video, only show supported languages
+                        if (isSeedance && voiceMode === 'speech_in_video') {
+                          return SEEDANCE_SPEECH_LANGUAGES.includes(lang.code as typeof SEEDANCE_SPEECH_LANGUAGES[number]);
+                        }
+                        return true;
+                      })
+                      .map((lang) => (
+                        <option key={lang.code} value={lang.code}>
+                          {lang.label} ({lang.native})
+                        </option>
+                      ))}
                   </select>
                 </div>
 
