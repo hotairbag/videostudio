@@ -713,32 +713,33 @@ export const generateStoryboard2 = async (
     - Grid dimensions: 3 columns × 2 rows = 48 units wide × 18 units tall total.
     - Think of it as 6 widescreen TV frames arranged in a 3×2 pattern.`;
 
-  // Prompt with strong style consistency instructions
+  // Prompt with grid structure as TOP PRIORITY
   const prompt = `
     Art Style: ${script.style}
 
-    Create a professional 3×2 cinematic storyboard grid containing exactly 6 panels for the following story continuation.
-    These are scenes 10-15 of a 15-scene story. This grid directly continues from the first 9 scenes.
-
-    CRITICAL STYLE CONSISTENCY:
-    - You MUST exactly match the art style, character designs, and color palette from the reference images.
-    - The reference images show the same characters/subjects from earlier in this story.
-    - Use the EXACT same rendering style (line work, shading, colors, proportions).
-    - These 6 panels must look like they were drawn by the same artist as the reference panels.
-    - DO NOT change the art style, character proportions, or color scheme.
+    Create a professional 3×2 storyboard grid containing exactly 6 panels for the following story continuation.
+    These are scenes 10-15 of a 15-scene story.
 
     ${layoutInstructions}
 
-    GRID STRUCTURE - STRICT UNIFORM LAYOUT:
+    GRID STRUCTURE - THIS IS THE MOST IMPORTANT REQUIREMENT:
     - The 6 panels must fill the ENTIRE image edge-to-edge with NO gaps, borders, or white space.
     - Layout: 3 columns × 2 rows = 6 panels total.
     - Each panel must be EXACTLY 1/3 of the total width and EXACTLY 1/2 of the total height.
     - ALL 6 PANELS MUST BE IDENTICAL IN SIZE - no exceptions.
-    - This is NOT a manga or comic layout - do NOT vary panel sizes for dramatic effect.
+    - This is NOT a manga or comic book - NEVER vary panel sizes for dramatic effect.
+    - ABSOLUTELY NO artistic panel layouts, overlapping panels, or irregular shapes.
     - NO margins, padding, or frames around or between panels.
     - The panels must touch each other directly - seamless grid like a 3×2 photo grid.
+    - Think of this as 6 photos arranged in a perfect 3×2 grid where every cell is exactly the same size.
     - Top row: panels 1, 2, 3 (left to right)
     - Bottom row: panels 4, 5, 6 (left to right)
+    - Each panel is a rectangle of IDENTICAL dimensions - uniform like a spreadsheet grid.
+
+    STYLE CONSISTENCY (match the reference images):
+    - Match the art style, character designs, and color palette from the reference images.
+    - The reference images show the same characters/subjects from earlier in this story.
+    - Use the same rendering style (line work, shading, colors, proportions).
 
     NARRATIVE:
     - Panel 6 (bottom right) is the FINAL scene of the entire story - it should feel like a conclusion.

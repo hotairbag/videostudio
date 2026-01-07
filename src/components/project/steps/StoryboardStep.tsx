@@ -31,6 +31,10 @@ export default function StoryboardStep({
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const isSeedance15 = videoModel === 'seedance-1.5' && seedanceSceneCount === 15;
 
+  // Only show regenerating overlay on first grid if we're actually regenerating it
+  // (not when generating second grid for the first time)
+  const isRegeneratingFirstGrid = isGeneratingStoryboard && (!isSeedance15 || storyboardUrl2 !== null);
+
   // Show loading skeleton
   if (isGeneratingStoryboard && !storyboardUrl) {
     return (
@@ -69,18 +73,18 @@ export default function StoryboardStep({
           )}
           <div
             className={`relative bg-neutral-800 rounded-xl overflow-hidden border border-neutral-700 transition-colors ${
-              isGeneratingStoryboard ? 'cursor-wait' : 'cursor-zoom-in hover:border-neutral-600'
+              isRegeneratingFirstGrid ? 'cursor-wait' : 'cursor-zoom-in hover:border-neutral-600'
             }`}
-            onClick={() => !isGeneratingStoryboard && setSelectedImage(storyboardUrl)}
+            onClick={() => !isRegeneratingFirstGrid && setSelectedImage(storyboardUrl)}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={storyboardUrl}
               alt="Storyboard Grid 1"
-              className={`w-full h-auto transition-opacity ${isGeneratingStoryboard ? 'opacity-40' : ''}`}
+              className={`w-full h-auto transition-opacity ${isRegeneratingFirstGrid ? 'opacity-40' : ''}`}
             />
-            {/* Regenerating overlay */}
-            {isGeneratingStoryboard && (
+            {/* Regenerating overlay - only show when actually regenerating first grid */}
+            {isRegeneratingFirstGrid && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-neutral-900/60">
                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-500 mb-3"></div>
                 <p className="text-white font-medium">Regenerating storyboard...</p>
