@@ -479,14 +479,10 @@ export const generateScript = async (
           systemInstruction,
           responseMimeType: "application/json",
           safetySettings,
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: rootProperties,
-            required: multiCharacter ? ["title", "scenes", "characters"] : ["title", "scenes", "narratorVoice"],
-          },
+          // Note: Removed responseSchema for faster generation - JSON structure enforced via prompt
         },
       }),
-      120000, // 120 second timeout for script generation (15 scenes can take a while)
+      60000, // 60 second timeout - much faster without schema validation
       "Script generation"
     );
 
