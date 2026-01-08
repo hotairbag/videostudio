@@ -617,16 +617,16 @@ const extractStaticDescription = (visualDescription: string): string => {
   return description;
 };
 
-export const generateStoryboard = async (script: Script, refImages?: string[], aspectRatio: AspectRatio = '16:9', totalScenes: number = 9): Promise<string> => {
-  const ai = getClient();
-
+/**
+ * Build the prompt for first storyboard (3x3 grid) - exported for copying
+ */
+export const buildStoryboardPrompt = (script: Script, aspectRatio: AspectRatio = '16:9', totalScenes: number = 9, hasRefImages: boolean = false): string => {
   // For 15-scene mode, first grid only shows scenes 1-9
   const scenesToShow = script.scenes.slice(0, 9);
 
   // Extract STATIC scene descriptions, stripping camera movements that are meant for video
   const sceneDescriptions = scenesToShow.map((s, i) => {
     const staticDescription = extractStaticDescription(s.visualDescription);
-    // Don't include cameraShot in storyboard - it contains video-specific camera movements
     return `Panel ${i + 1}: ${staticDescription}`;
   }).join("\n");
 
@@ -657,32 +657,36 @@ export const generateStoryboard = async (script: Script, refImages?: string[], a
     `
     : '';
 
-  const prompt = `
-    Art Style: ${script.style}
+  return `Art Style: ${script.style}
 
-    Create a professional 3×3 cinematic storyboard grid containing exactly 9 panels for the following story.
-    ${continuationNote}
+Create a professional 3×3 cinematic storyboard grid containing exactly 9 panels for the following story.
+${continuationNote}
 
-    ${layoutInstructions}
+${layoutInstructions}
 
-    GRID STRUCTURE - STRICT UNIFORM LAYOUT:
-    - The 9 panels must fill the ENTIRE image edge-to-edge with NO gaps, borders, or white space.
-    - Each panel must be EXACTLY 1/3 of the total width and EXACTLY 1/3 of the total height.
-    - ALL 9 PANELS MUST BE IDENTICAL IN SIZE - no exceptions.
-    - This is NOT a manga or comic layout - do NOT vary panel sizes for dramatic effect.
-    - NO margins, padding, or frames around or between panels.
-    - The panels must touch each other directly - seamless grid like a tic-tac-toe board.
-    - Top row: panels 1, 2, 3 (left to right)
-    - Middle row: panels 4, 5, 6 (left to right)
-    - Bottom row: panels 7, 8, 9 (left to right)
-    - Think of this as a 3×3 photo grid where every cell is exactly the same size.
+GRID STRUCTURE - STRICT UNIFORM LAYOUT:
+- The 9 panels must fill the ENTIRE image edge-to-edge with NO gaps, borders, or white space.
+- Each panel must be EXACTLY 1/3 of the total width and EXACTLY 1/3 of the total height.
+- ALL 9 PANELS MUST BE IDENTICAL IN SIZE - no exceptions.
+- This is NOT a manga or comic layout - do NOT vary panel sizes for dramatic effect.
+- NO margins, padding, or frames around or between panels.
+- The panels must touch each other directly - seamless grid like a tic-tac-toe board.
+- Top row: panels 1, 2, 3 (left to right)
+- Middle row: panels 4, 5, 6 (left to right)
+- Bottom row: panels 7, 8, 9 (left to right)
+- Think of this as a 3×3 photo grid where every cell is exactly the same size.
 
-    Ensure consistent characters, lighting, and style across all 9 panels.
-    ${refImages && refImages.length > 0 ? 'Use the provided reference image(s) for character designs, art style, and visual consistency.' : ''}
+Ensure consistent characters, lighting, and style across all 9 panels.
+${hasRefImages ? 'Use the provided reference image(s) for character designs, art style, and visual consistency.' : ''}
 
-    Scenes:
-    ${sceneDescriptions}
-  `;
+Scenes:
+${sceneDescriptions}`;
+};
+
+export const generateStoryboard = async (script: Script, refImages?: string[], aspectRatio: AspectRatio = '16:9', totalScenes: number = 9): Promise<string> => {
+  const ai = getClient();
+
+  const prompt = buildStoryboardPrompt(script, aspectRatio, totalScenes, refImages && refImages.length > 0);
 
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [{ text: prompt }];
   if (refImages && refImages.length > 0) {
@@ -726,22 +730,11 @@ export const generateStoryboard = async (script: Script, refImages?: string[], a
 };
 
 /**
- * Generate second 3x2 storyboard grid for Seedance mode (scenes 10-15)
- * Uses the first grid as a style reference along with any user-provided reference images
+ * Build the prompt for second storyboard (3x2 grid) - exported for copying
  */
-export const generateStoryboard2 = async (
-  script: Script,
-  stylePanels: string[],  // Individual panels from first storyboard as style reference
-  refImages?: string[],
-  aspectRatio: AspectRatio = '16:9'
-): Promise<string> => {
-  const ai = getClient();
-
+export const buildStoryboard2Prompt = (script: Script, aspectRatio: AspectRatio = '16:9'): string => {
   // Get scenes 10-15 (indices 9-14)
   const scenes10to15 = script.scenes.slice(9, 15);
-  if (scenes10to15.length !== 6) {
-    throw new Error(`Expected 6 scenes for second grid, got ${scenes10to15.length}`);
-  }
 
   // Extract STATIC scene descriptions, stripping camera movements that are meant for video
   const sceneDescriptions = scenes10to15.map((s, i) => {
@@ -750,8 +743,6 @@ export const generateStoryboard2 = async (
   }).join("\n");
 
   // Determine grid aspect ratio based on panel aspect ratio
-  // For 9:16 panels in 3x2 grid = 27:32 (0.84) → closest is 4:5 (0.8)
-  // For 16:9 panels in 3x2 grid = 48:18 (2.67) → closest is 16:9 (1.78)
   const isPortrait = aspectRatio === '9:16';
   const gridAspectRatio = isPortrait ? '4:5' : '16:9';
 
@@ -760,8 +751,7 @@ export const generateStoryboard2 = async (
     ? 'true 9:16 portrait proportions (taller than wide)'
     : 'true 16:9 landscape proportions (wider than tall)';
 
-  // Build the prompt following the simpler, proven format
-  const prompt = `Create one single image in aspect ratio ${gridAspectRatio}.
+  return `Create one single image in aspect ratio ${gridAspectRatio}.
 
 Attached images + purpose:
 The attached reference images show the same characters/subjects from earlier in this story.
@@ -786,8 +776,32 @@ Correct anatomy and hands (no extra fingers), sharp focus on faces when close-up
 Story (Panels 1–6) — Final act of a 15-scene story:
 ${sceneDescriptions}
 
-Panel 6 is the FINAL scene - it should feel like a conclusion with strong cinematic atmosphere.
-  `;
+Panel 6 is the FINAL scene - it should feel like a conclusion with strong cinematic atmosphere.`;
+};
+
+/**
+ * Generate second 3x2 storyboard grid for Seedance mode (scenes 10-15)
+ * Uses the first grid as a style reference along with any user-provided reference images
+ */
+export const generateStoryboard2 = async (
+  script: Script,
+  stylePanels: string[],  // Individual panels from first storyboard as style reference
+  refImages?: string[],
+  aspectRatio: AspectRatio = '16:9'
+): Promise<string> => {
+  const ai = getClient();
+
+  // Get scenes 10-15 (indices 9-14)
+  const scenes10to15 = script.scenes.slice(9, 15);
+  if (scenes10to15.length !== 6) {
+    throw new Error(`Expected 6 scenes for second grid, got ${scenes10to15.length}`);
+  }
+
+  const prompt = buildStoryboard2Prompt(script, aspectRatio);
+
+  // Determine grid aspect ratio for image config
+  const isPortrait = aspectRatio === '9:16';
+  const gridAspectRatio = isPortrait ? '4:5' : '16:9';
 
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [{ text: prompt }];
 
@@ -815,9 +829,6 @@ Panel 6 is the FINAL scene - it should feel like a conclusion with strong cinema
   }
 
   try {
-    // Use dynamic aspect ratio based on panel orientation:
-    // - 16:9 panels → 21:9 ultrawide (3×16 : 2×9 = 48:18 ≈ 21:9)
-    // - 9:16 panels → 4:5 tall portrait (3×9 : 2×16 = 27:32 ≈ 4:5)
     const response = await withTimeout(
       ai.models.generateContent({
         model: "gemini-3-pro-image-preview",

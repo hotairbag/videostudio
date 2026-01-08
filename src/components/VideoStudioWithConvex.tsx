@@ -9,7 +9,7 @@ import Production from '@/components/Production';
 import ProjectLayout, { ProjectStep } from '@/components/project/ProjectLayout';
 import InputStep from '@/components/project/steps/InputStep';
 import StoryboardStep from '@/components/project/steps/StoryboardStep';
-import { generateScript, generateStoryboard, generateStoryboard2, generateMasterAudio, generateVideoForScene, setApiKey, getApiKey } from '@/services/geminiService';
+import { generateScript, generateStoryboard, generateStoryboard2, generateMasterAudio, generateVideoForScene, setApiKey, getApiKey, buildStoryboardPrompt, buildStoryboard2Prompt } from '@/services/geminiService';
 import { sliceGridImage, sliceGrid3x2Image } from '@/utils/imageUtils';
 import { useTaskPolling, useStartVideoTask, useStartMusicTask } from '@/hooks/useTaskPolling';
 import { AspectRatio, VideoModel, SeedanceResolution, SeedanceDuration, SeedanceSceneCount, Script, VoiceMode, Character, DialogueLine, ReferenceImages, Scene, ContentLanguage } from '@/types';
@@ -897,6 +897,15 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
         <StoryboardStep
           storyboardUrl={storyboard1?.imageUrl || null}
           storyboardUrl2={storyboard2?.imageUrl || null}
+          storyboardPrompt1={fullScript ? buildStoryboardPrompt(
+            fullScript,
+            project.aspectRatio as AspectRatio,
+            project.videoModel === 'seedance-1.5' ? project.seedanceSceneCount : 9,
+            false // hasRefImages - we don't need to include this info in the copied prompt
+          ) : undefined}
+          storyboardPrompt2={fullScript && project.videoModel === 'seedance-1.5' && project.seedanceSceneCount === 15
+            ? buildStoryboard2Prompt(fullScript, project.aspectRatio as AspectRatio)
+            : undefined}
           isRegeneratingGrid1={isGeneratingStoryboard1}
           isRegeneratingGrid2={isGeneratingStoryboard2}
           isConfirming={isConfirming}
