@@ -358,7 +358,7 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
       // Generate first storyboard (3x3 grid)
       // Pass totalScenes so the model knows if this is part of a longer story
       const totalScenes = project.videoModel === 'seedance-1.5' ? (project.seedanceSceneCount ?? 9) : 9;
-      const storyboardBase64 = await generateStoryboard(generatedScript, flatImages, project.aspectRatio as AspectRatio, totalScenes);
+      const { imageDataUrl: storyboardBase64, seed: storyboardSeed } = await generateStoryboard(generatedScript, flatImages, project.aspectRatio as AspectRatio, totalScenes);
       // Upload to R2 to avoid Convex 1MB limit
       const storyboardUrl = await uploadImageToR2(storyboardBase64);
 
@@ -366,6 +366,7 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
         projectId,
         gridType: '3x3',
         imageUrl: storyboardUrl,
+        seed: storyboardSeed,
       });
 
       setIsGeneratingStoryboard1(false);
@@ -378,12 +379,13 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
         // Use first 3 panels as style reference (avoids passing full grid which confuses the model)
         const stylePanels = panels.slice(0, 3);
 
-        // Generate second storyboard for Seedance
+        // Generate second storyboard for Seedance (use same seed for style consistency)
         const storyboardBase64_2 = await generateStoryboard2(
           generatedScript,
           stylePanels,
           flatImages,
-          project.aspectRatio as AspectRatio
+          project.aspectRatio as AspectRatio,
+          storyboardSeed
         );
         // Upload to R2 to avoid Convex 1MB limit
         const storyboardUrl2 = await uploadImageToR2(storyboardBase64_2);
@@ -413,7 +415,7 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
       const totalScenes = project.videoModel === 'seedance-1.5' ? (project.seedanceSceneCount ?? 9) : 9;
       console.log('[Regenerate] Generating new storyboard...', { totalScenes, aspectRatio: project.aspectRatio });
 
-      const storyboardBase64 = await generateStoryboard(fullScript, flattenRefImages(refImagesRef.current), project.aspectRatio as AspectRatio, totalScenes);
+      const { imageDataUrl: storyboardBase64, seed: newSeed } = await generateStoryboard(fullScript, flattenRefImages(refImagesRef.current), project.aspectRatio as AspectRatio, totalScenes);
       console.log('[Regenerate] Storyboard generated, uploading to R2...');
 
       const storyboardUrl = await uploadImageToR2(storyboardBase64);
@@ -421,7 +423,7 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
 
       if (storyboard1) {
         console.log('[Regenerate] Updating storyboard in Convex...');
-        await updateStoryboard({ storyboardId: storyboard1._id, imageUrl: storyboardUrl });
+        await updateStoryboard({ storyboardId: storyboard1._id, imageUrl: storyboardUrl, seed: newSeed });
         console.log('[Regenerate] Storyboard updated successfully');
       } else {
         console.warn('[Regenerate] No storyboard1 found to update');
@@ -454,11 +456,13 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
       const panels = await sliceGridImage(base64, project.aspectRatio as AspectRatio);
       const stylePanels = panels.slice(0, 3);
 
+      // Use the seed from storyboard1 for style consistency
       const storyboardBase64_2 = await generateStoryboard2(
         fullScript,
         stylePanels,
         flattenRefImages(refImagesRef.current),
-        project.aspectRatio as AspectRatio
+        project.aspectRatio as AspectRatio,
+        storyboard1.seed ?? undefined
       );
       const storyboardUrl2 = await uploadImageToR2(storyboardBase64_2);
 

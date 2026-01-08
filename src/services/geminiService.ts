@@ -650,10 +650,23 @@ Scenes:
 ${sceneDescriptions}`;
 };
 
-export const generateStoryboard = async (script: Script, refImages?: string[], aspectRatio: AspectRatio = '16:9', totalScenes: number = 9): Promise<string> => {
+export interface StoryboardResult {
+  imageDataUrl: string;
+  seed: number;
+}
+
+export const generateStoryboard = async (
+  script: Script,
+  refImages?: string[],
+  aspectRatio: AspectRatio = '16:9',
+  totalScenes: number = 9
+): Promise<StoryboardResult> => {
   const ai = getClient();
 
   const prompt = buildStoryboardPrompt(script, aspectRatio, totalScenes, refImages && refImages.length > 0);
+
+  // Generate a random seed for reproducibility - will be reused for second storyboard
+  const seed = Math.floor(Math.random() * 2147483647);
 
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [{ text: prompt }];
   if (refImages && refImages.length > 0) {
@@ -673,6 +686,7 @@ export const generateStoryboard = async (script: Script, refImages?: string[], a
         model: "gemini-3-pro-image-preview",
         contents: { parts },
         config: {
+          seed,
           safetySettings,
           imageConfig: {
             aspectRatio: aspectRatio,
@@ -686,7 +700,10 @@ export const generateStoryboard = async (script: Script, refImages?: string[], a
 
     for (const part of response.candidates?.[0]?.content?.parts || []) {
       if (part.inlineData) {
-        return `data:image/png;base64,${part.inlineData.data}`;
+        return {
+          imageDataUrl: `data:image/png;base64,${part.inlineData.data}`,
+          seed
+        };
       }
     }
     throw new Error("No image generated in response");
@@ -750,12 +767,14 @@ Panel 6 is the FINAL scene of the entire story - it should feel like a satisfyin
  * Generate second storyboard as 3x2 grid for Seedance mode (scenes 10-15)
  * Uses 4:5 aspect ratio for higher quality 6-panel grid
  * Uses the first grid panels as style reference along with any user-provided reference images
+ * Accepts seed from first storyboard for style consistency
  */
 export const generateStoryboard2 = async (
   script: Script,
   stylePanels: string[],  // Individual panels from first storyboard as style reference
   refImages?: string[],
-  aspectRatio: AspectRatio = '16:9'
+  aspectRatio: AspectRatio = '16:9',
+  seed?: number  // Seed from first storyboard for consistency
 ): Promise<string> => {
   const ai = getClient();
 
@@ -802,6 +821,7 @@ export const generateStoryboard2 = async (
         model: "gemini-3-pro-image-preview",
         contents: { parts },
         config: {
+          ...(seed !== undefined && { seed }),  // Use same seed as first storyboard for consistency
           safetySettings,
           imageConfig: {
             aspectRatio: gridAspectRatio,  // 4:5 for portrait panels, 16:9 for landscape

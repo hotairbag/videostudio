@@ -74,6 +74,8 @@ export default defineSchema({
     projectId: v.id("projects"),
     gridType: v.union(v.literal("3x3"), v.literal("3x2")),
     imageUrl: v.string(),
+    // Seed used for generation (for consistency between grids)
+    seed: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index("by_project", ["projectId"]),

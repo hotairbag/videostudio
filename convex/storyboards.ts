@@ -12,6 +12,7 @@ export const create = mutation({
     projectId: v.id("projects"),
     gridType: v.union(v.literal("3x3"), v.literal("3x2")),
     imageUrl: v.string(),
+    seed: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -52,8 +53,9 @@ export const update = mutation({
   args: {
     storyboardId: v.id("storyboards"),
     imageUrl: v.string(),
+    seed: v.optional(v.number()),
   },
-  handler: async (ctx, { storyboardId, imageUrl }) => {
+  handler: async (ctx, { storyboardId, imageUrl, seed }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Unauthorized");
 
@@ -65,6 +67,10 @@ export const update = mutation({
       throw new Error("Unauthorized");
     }
 
-    await ctx.db.patch(storyboardId, { imageUrl });
+    const updates: { imageUrl: string; seed?: number } = { imageUrl };
+    if (seed !== undefined) {
+      updates.seed = seed;
+    }
+    await ctx.db.patch(storyboardId, updates);
   },
 });
