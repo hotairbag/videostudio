@@ -766,12 +766,12 @@ Panel 6 is the FINAL scene of the entire story - it should feel like a satisfyin
 /**
  * Generate second storyboard as 3x2 grid for Seedance mode (scenes 10-15)
  * Uses 4:5 aspect ratio for higher quality 6-panel grid
- * Uses the first grid panels as style reference along with any user-provided reference images
+ * Uses the first grid image as style reference along with any user-provided reference images
  * Accepts seed from first storyboard for style consistency
  */
 export const generateStoryboard2 = async (
   script: Script,
-  stylePanels: string[],  // Individual panels from first storyboard as style reference
+  firstGridImage: string,  // Full first storyboard grid as style reference
   refImages?: string[],
   aspectRatio: AspectRatio = '16:9',
   seed?: number  // Seed from first storyboard for consistency
@@ -792,16 +792,14 @@ export const generateStoryboard2 = async (
 
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [{ text: prompt }];
 
-  // Add individual panels as style references (not the full grid)
-  for (const panel of stylePanels) {
-    const cleanPanel = panel.includes(',') ? panel.split(',')[1] : panel;
-    parts.push({
-      inlineData: {
-        mimeType: 'image/png',
-        data: cleanPanel
-      }
-    });
-  }
+  // Add full first storyboard grid as style reference
+  const cleanGrid = firstGridImage.includes(',') ? firstGridImage.split(',')[1] : firstGridImage;
+  parts.push({
+    inlineData: {
+      mimeType: 'image/png',
+      data: cleanGrid
+    }
+  });
 
   // Add user reference images if provided
   if (refImages && refImages.length > 0) {

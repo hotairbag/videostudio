@@ -374,15 +374,11 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
       // Only generate second storyboard for Seedance with 15 scenes
       if (project.videoModel === 'seedance-1.5' && project.seedanceSceneCount === 15) {
         setIsGeneratingStoryboard2(true);
-        // Slice first storyboard into individual panels for style reference
-        const panels = await sliceGridImage(storyboardBase64, project.aspectRatio as AspectRatio);
-        // Use first 3 panels as style reference (avoids passing full grid which confuses the model)
-        const stylePanels = panels.slice(0, 3);
 
-        // Generate second storyboard for Seedance (use same seed for style consistency)
+        // Generate second storyboard for Seedance (use full first grid as style reference)
         const storyboardBase64_2 = await generateStoryboard2(
           generatedScript,
-          stylePanels,
+          storyboardBase64,  // Pass full first grid image as style reference
           flatImages,
           project.aspectRatio as AspectRatio,
           storyboardSeed
@@ -446,20 +442,16 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
       const cacheBuster = `?t=${Date.now()}`;
       const response = await fetch(storyboard1.imageUrl + cacheBuster);
       const blob = await response.blob();
-      const base64 = await new Promise<string>((resolve) => {
+      const firstGridBase64 = await new Promise<string>((resolve) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result as string);
         reader.readAsDataURL(blob);
       });
 
-      // Slice into individual panels for style reference (avoids confusing the model with grid structure)
-      const panels = await sliceGridImage(base64, project.aspectRatio as AspectRatio);
-      const stylePanels = panels.slice(0, 3);
-
-      // Use the seed from storyboard1 for style consistency
+      // Use the seed from storyboard1 for style consistency, pass full first grid as reference
       const storyboardBase64_2 = await generateStoryboard2(
         fullScript,
-        stylePanels,
+        firstGridBase64,  // Pass full first grid image as style reference
         flattenRefImages(refImagesRef.current),
         project.aspectRatio as AspectRatio,
         storyboard1.seed ?? undefined
