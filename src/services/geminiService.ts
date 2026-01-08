@@ -697,72 +697,58 @@ export const generateStoryboard = async (script: Script, refImages?: string[], a
 };
 
 /**
- * Build the prompt for second storyboard (3x3 grid with blank bottom row) - exported for copying
- * Uses same format as first grid for consistency, but only panels 1-6 have content
+ * Build the prompt for second storyboard (3x2 grid) - exported for copying
+ * 6 panels arranged as 3 columns x 2 rows, 4:5 aspect ratio
  */
 export const buildStoryboard2Prompt = (script: Script, aspectRatio: AspectRatio = '16:9'): string => {
   // Get scenes 10-15 (indices 9-14)
   const scenes10to15 = script.scenes.slice(9, 15);
 
-  // Extract STATIC scene descriptions, stripping camera movements that are meant for video
+  // Extract STATIC scene descriptions (first sentence only)
   const sceneDescriptions = scenes10to15.map((s, i) => {
     const staticDescription = extractStaticDescription(s.visualDescription);
     return `Panel ${i + 1}: ${staticDescription}`;
   }).join("\n");
 
-  // Build explicit layout instructions based on aspect ratio (same as first grid)
+  // Panel proportions based on video aspect ratio
   const isPortrait = aspectRatio === '9:16';
-  const layoutInstructions = isPortrait
-    ? `CRITICAL PANEL SHAPE - PORTRAIT MODE:
-    - The overall grid image should be TALLER than it is WIDE (portrait orientation).
-    - Each of the 9 panels must be VERTICAL/PORTRAIT (taller than wide), like a phone screen or TikTok video.
-    - Panel dimensions: each panel is 9 units wide × 16 units tall (9:16 aspect ratio).
-    - Grid dimensions: 3 columns × 3 rows = 27 units wide × 48 units tall total.
-    - Think of it as 9 vertical smartphone screens arranged in a 3×3 pattern.`
-    : `CRITICAL PANEL SHAPE - LANDSCAPE MODE:
-    - The overall grid image should be WIDER than it is TALL (landscape orientation).
-    - Each of the 9 panels must be HORIZONTAL/LANDSCAPE (wider than tall), like a movie screen.
-    - Panel dimensions: each panel is 16 units wide × 9 units tall (16:9 aspect ratio).
-    - Grid dimensions: 3 columns × 3 rows = 48 units wide × 27 units tall total.
-    - Think of it as 9 widescreen TV frames arranged in a 3×3 pattern.`;
+  const panelProportions = isPortrait
+    ? 'true 9:16 portrait proportions (taller than wide)'
+    : 'true 16:9 landscape proportions (wider than tall)';
 
   return `Art Style: ${script.style}
 
-Create a professional 3×3 cinematic storyboard grid for the FINAL 6 scenes of a 15-scene story.
+Create a single image containing a 3×2 grid (3 columns, 2 rows) for the FINAL 6 scenes of a 15-scene story.
 The attached reference images show the same characters/subjects from earlier in this story.
 Use them as exact reference for character faces, hair, outfits, proportions, and overall design.
 Keep all characters perfectly consistent with these references in every panel.
 
-${layoutInstructions}
-
-GRID STRUCTURE - STRICT UNIFORM LAYOUT:
-- The 9 panels must fill the ENTIRE image edge-to-edge with NO gaps, borders, or white space.
-- Each panel must be EXACTLY 1/3 of the total width and EXACTLY 1/3 of the total height.
-- ALL 9 PANELS MUST BE IDENTICAL IN SIZE - no exceptions.
-- This is NOT a manga or comic layout - do NOT vary panel sizes for dramatic effect.
-- NO margins, padding, or frames around or between panels.
-- The panels must touch each other directly - seamless grid like a tic-tac-toe board.
+GRID LAYOUT:
+- 3 columns × 2 rows = 6 panels total
+- Each panel must have ${panelProportions}
 - Top row: panels 1, 2, 3 (left to right)
-- Middle row: panels 4, 5, 6 (left to right)
-- Bottom row: panels 7, 8, 9 (left to right) - LEAVE THESE BLANK (solid black)
-- Think of this as a 3×3 photo grid where every cell is exactly the same size.
+- Bottom row: panels 4, 5, 6 (left to right)
+- Panels fill the entire image with thin clean gutters between them
+- NO margins, borders, or extra spacing around the grid
 
-IMPORTANT - BLANK BOTTOM ROW:
-- Panels 7, 8, and 9 (the entire bottom row) must be SOLID BLACK - no content, no imagery.
-- Only panels 1-6 contain story scenes.
-- This is intentional - do not put any content in the bottom row.
+STYLE:
+Clean composition, cinematic lighting, subtle bloom, crisp highlights, controlled shadows, polished color grading.
+Cohesive palette across all panels matching the reference images.
 
-Ensure consistent characters, lighting, and style across all 6 story panels.
+RULES:
+- All characters must remain 100% consistent with their reference images
+- No text, no logos, no watermarks
+- Correct anatomy and hands (no extra fingers)
 
-Story Scenes (Panels 1-6 only):
+Story Scenes (Panels 1-6):
 ${sceneDescriptions}
 
 Panel 6 is the FINAL scene of the entire story - it should feel like a satisfying conclusion.`;
 };
 
 /**
- * Generate second storyboard as 3x3 grid with blank bottom row for Seedance mode (scenes 10-15)
- * Uses same grid format as first storyboard for consistency, but only top 6 panels have content
+ * Generate second storyboard as 3x2 grid for Seedance mode (scenes 10-15)
+ * Uses 4:5 aspect ratio for higher quality 6-panel grid
  * Uses the first grid panels as style reference along with any user-provided reference images
  */
 export const generateStoryboard2 = async (
@@ -780,6 +766,10 @@ export const generateStoryboard2 = async (
   }
 
   const prompt = buildStoryboard2Prompt(script, aspectRatio);
+
+  // Determine grid aspect ratio: 4:5 works well for 3x2 grid
+  const isPortrait = aspectRatio === '9:16';
+  const gridAspectRatio = isPortrait ? '4:5' : '16:9';
 
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [{ text: prompt }];
 
@@ -807,7 +797,6 @@ export const generateStoryboard2 = async (
   }
 
   try {
-    // Use same aspect ratio as first grid for consistency
     const response = await withTimeout(
       ai.models.generateContent({
         model: "gemini-3-pro-image-preview",
@@ -815,7 +804,7 @@ export const generateStoryboard2 = async (
         config: {
           safetySettings,
           imageConfig: {
-            aspectRatio: aspectRatio,  // Same as first grid (16:9 or 9:16)
+            aspectRatio: gridAspectRatio,  // 4:5 for portrait panels, 16:9 for landscape
             imageSize: "2K"
           }
         }

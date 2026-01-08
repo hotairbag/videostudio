@@ -10,7 +10,7 @@ import ProjectLayout, { ProjectStep } from '@/components/project/ProjectLayout';
 import InputStep from '@/components/project/steps/InputStep';
 import StoryboardStep from '@/components/project/steps/StoryboardStep';
 import { generateScript, generateStoryboard, generateStoryboard2, generateMasterAudio, generateVideoForScene, setApiKey, getApiKey, buildStoryboardPrompt, buildStoryboard2Prompt } from '@/services/geminiService';
-import { sliceGridImage } from '@/utils/imageUtils';
+import { sliceGridImage, sliceGrid3x2Image } from '@/utils/imageUtils';
 import { useTaskPolling, useStartVideoTask, useStartMusicTask } from '@/hooks/useTaskPolling';
 import { AspectRatio, VideoModel, SeedanceResolution, SeedanceDuration, SeedanceSceneCount, Script, VoiceMode, Character, DialogueLine, ReferenceImages, Scene, ContentLanguage } from '@/types';
 import { useToast } from '@/components/ui/Toast';
@@ -503,9 +503,8 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
 
       // Only slice second grid for Seedance with 15 scenes
       if (project.videoModel === 'seedance-1.5' && project.seedanceSceneCount === 15 && storyboard2?.imageUrl) {
-        // Slice second grid (3x3 with blank bottom row, take only first 6 panels)
-        const allFrames2 = await sliceGridImage(storyboard2.imageUrl, project.aspectRatio as AspectRatio);
-        const frames2 = allFrames2.slice(0, 6); // Only use panels 1-6, ignore blank bottom row
+        // Slice second grid (3x2 = 6 frames)
+        const frames2 = await sliceGrid3x2Image(storyboard2.imageUrl, project.aspectRatio as AspectRatio);
 
         for (let i = 0; i < Math.min(frames2.length, scenes.length - 9); i++) {
           if (scenes[9 + i]) {
