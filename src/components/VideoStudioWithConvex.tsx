@@ -942,6 +942,7 @@ export default function VideoStudioWithConvex({ projectId, project }: VideoStudi
           seedanceDuration={(project.seedanceDuration ?? 4) as SeedanceDuration}
           originalPrompt={project.originalPrompt}
           characterRefs={project.characterRefs}
+          language={(project.language ?? 'english') as ContentLanguage}
         />
       )}
     </ProjectLayout>

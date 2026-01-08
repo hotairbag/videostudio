@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Script, Scene, AspectRatio, VideoModel, VoiceMode, SeedanceDuration } from '@/types';
+import { Script, Scene, AspectRatio, VideoModel, VoiceMode, SeedanceDuration, ContentLanguage } from '@/types';
 import { composeAndExportVideo } from '@/utils/videoCompositor';
+import { buildSeedancePrompt, buildVeoPrompt } from '@/services/geminiService';
 
 // Type for character reference data stored in project
 interface CharacterRef {
@@ -34,6 +35,8 @@ interface ProductionProps {
   // Project overview data
   originalPrompt?: string;
   characterRefs?: string; // JSON string of CharacterRef[]
+  // Language for prompts
+  language?: ContentLanguage;
 }
 
 // Video duration per clip based on model
@@ -290,6 +293,7 @@ const Production: React.FC<ProductionProps> = ({
   seedanceDuration,
   originalPrompt,
   characterRefs,
+  language = 'english',
 }) => {
   // For Seedance, use the configurable duration; for Veo, use fixed 8s
   const clipDuration = videoModel === 'seedance-1.5'
@@ -301,6 +305,22 @@ const Production: React.FC<ProductionProps> = ({
   const [exportProgress, setExportProgress] = useState("");
   const [playingAudio, setPlayingAudio] = useState<'music' | 'voiceover' | null>(null);
   const [showProjectOverview, setShowProjectOverview] = useState(false);
+  const [copiedSceneId, setCopiedSceneId] = useState<number | null>(null);
+
+  // Copy video prompt for a scene
+  const handleCopyPrompt = async (scene: Scene) => {
+    const prompt = isSeedance
+      ? buildSeedancePrompt(scene, script.style || '', voiceMode, script.characters, language)
+      : buildVeoPrompt(scene, voiceMode, script.characters, language);
+
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopiedSceneId(scene.id);
+      setTimeout(() => setCopiedSceneId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy prompt:', err);
+    }
+  };
 
   // Parse character refs
   const parsedCharacterRefs: CharacterRef[] = React.useMemo(() => {
@@ -701,6 +721,27 @@ const Production: React.FC<ProductionProps> = ({
               <div className="p-4 flex-1 flex flex-col gap-3">
                 <p className="text-xs text-neutral-400 font-mono">ID: {scene.id}</p>
                 <p className="text-sm text-neutral-200 line-clamp-3">{scene.visualDescription}</p>
+                <button
+                  onClick={() => handleCopyPrompt(scene)}
+                  className="mt-auto self-start px-3 py-1.5 text-xs rounded bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition-all flex items-center gap-1.5"
+                  title="Copy video generation prompt"
+                >
+                  {copiedSceneId === scene.id ? (
+                    <>
+                      <svg className="w-3.5 h-3.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      Copy Prompt
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           );

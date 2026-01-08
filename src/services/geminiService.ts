@@ -253,13 +253,16 @@ export const generateScript = async (
     `;
   }
 
+  // IMPORTANT: The FIRST sentence of visualDescription is used for storyboard panel generation.
+  // It must describe ONE clear moment/action without camera instructions.
+  // Camera movements, cuts, and shot types come AFTER the first sentence for video generation.
   const visualDescriptionHint = isSeedance
     ? (enableCuts
-        ? '- visualDescription: Use "Shot 1:" and "Shot 2:" format. Include shot size, subject, movement, environment, camera movement. Max 2 shots per scene.'
-        : '- visualDescription: Follow Seedance formula: Shot size + Subject + Movement + Environment + Camera movement + Aesthetic. Single continuous shot.')
+        ? '- visualDescription: FIRST SENTENCE must describe ONE clear moment/action (no camera terms). Then use "Shot 1:" and "Shot 2:" format for camera movements. The first sentence becomes the storyboard panel image.'
+        : '- visualDescription: FIRST SENTENCE must describe ONE clear moment/action (no camera terms). Then add camera movement details. The first sentence becomes the storyboard panel image.')
     : (enableCuts
-        ? '- visualDescription: Multi-shot description with 2-3 [cut] tags for camera angle changes. Make it dynamic!'
-        : '- visualDescription: Single continuous shot with smooth camera movement. No cuts.');
+        ? '- visualDescription: FIRST SENTENCE must describe ONE clear moment/action (no camera terms, no shot types). Then add [cut] tags for camera angle changes. The first sentence becomes the storyboard panel image.'
+        : '- visualDescription: FIRST SENTENCE must describe ONE clear moment/action (no camera terms). Then add camera movement details. The first sentence becomes the storyboard panel image.');
 
   // Voice mode instructions
   const allVoices = [...GEMINI_VOICES.female, ...GEMINI_VOICES.male];
@@ -569,89 +572,16 @@ export const generateScript = async (
 };
 
 /**
- * Extract static scene description from visualDescription, removing camera movements and shot types
- * Camera movements and shot types are for video generation, not storyboard images
- * IMPORTANT: Each panel should only describe ONE action/moment to avoid confusing the grid generator
+ * Extract the first sentence from visualDescription for storyboard panel generation.
+ * The AI is instructed to write the FIRST sentence as a clean, single-action description
+ * without camera terms. Camera movements and cuts come after for video generation.
  */
 const extractStaticDescription = (visualDescription: string): string => {
-  let description = visualDescription;
+  // Just take the first sentence - the AI is instructed to make it a clean panel description
+  const firstSentence = visualDescription.split(/(?<=[.!?])\s/)[0] || visualDescription;
 
-  // Remove [cut] tags and everything after them (Veo multi-shot format)
-  description = description.split('[cut]')[0].trim();
-
-  // Remove "Shot 1:" / "Shot 2:" prefixes (Seedance multi-shot format)
-  description = description.replace(/Shot \d+:\s*/gi, '');
-
-  // Remove secondary actions that start with "shot of" - these are cut descriptions that leaked through
-  description = description.replace(/\.?\s*shot of\s.*/gi, '');
-
-  // Remove secondary actions after "cut to" or "cuts to"
-  description = description.replace(/\.?\s*cuts?\s+to\s.*/gi, '');
-
-  // Remove anything after "then" that describes a different action
-  description = description.replace(/\.?\s*then\s+(she|he|they|it|the)\s.*/gi, '');
-
-  // Remove camera shot types that confuse grid image generation
-  const shotTypePatterns = [
-    /\b(wide[- ]?shot\.?)\s*/gi,
-    /\b(full[- ]?shot\.?)\s*/gi,
-    /\b(medium[- ]?(shot|close[- ]?up)\.?)\s*/gi,
-    /\b(close[- ]?up\.?)\s*/gi,
-    /\b(closeup\.?)\s*/gi,
-    /\b(extreme[- ]?close[- ]?up\.?)\s*/gi,
-    /\b(big[- ]?close[- ]?up\.?)\s*/gi,
-    /\b(over[- ]?the[- ]?shoulder[- ]?(shot)?\.?)\s*/gi,
-    /\b(low[- ]?angle[- ]?(shot)?\.?)\s*/gi,
-    /\b(high[- ]?angle[- ]?(shot)?\.?)\s*/gi,
-    /\b(bird'?s?[- ]?eye[- ]?(view|shot)?\.?)\s*/gi,
-    /\b(dutch[- ]?angle\.?)\s*/gi,
-    /\b(eye[- ]?level[- ]?(shot)?\.?)\s*/gi,
-    /\b(establishing[- ]?shot\.?)\s*/gi,
-    /\b(two[- ]?shot\.?)\s*/gi,
-    /\b(insert[- ]?shot\.?)\s*/gi,
-    /\b(aerial[- ]?shot\.?)\s*/gi,
-    /\b(pov[- ]?(shot)?\.?)\s*/gi,
-    /\b(point[- ]?of[- ]?view[- ]?(shot)?\.?)\s*/gi,
-  ];
-
-  for (const pattern of shotTypePatterns) {
-    description = description.replace(pattern, '');
-  }
-
-  // Remove camera movement instructions that confuse image generation
-  const cameraMovementPatterns = [
-    /\b(dolly[- ]?(in|out|forward|back(ward)?)?)\b/gi,
-    /\b(pan(ning)?[- ]?(left|right|up|down)?)\b/gi,
-    /\b(tilt(ing)?[- ]?(up|down)?)\b/gi,
-    /\b(track(ing)?[- ]?(left|right|in|out)?)\b/gi,
-    /\b(zoom(ing)?[- ]?(in|out)?)\b/gi,
-    /\b(push[- ]?in)\b/gi,
-    /\b(pull[- ]?(out|back))\b/gi,
-    /\b(crane[- ]?(up|down|shot)?)\b/gi,
-    /\b(jib[- ]?(up|down)?)\b/gi,
-    /\b(steadicam)\b/gi,
-    /\b(handheld)\b/gi,
-    /\b(follow(ing)?[- ]?shot)\b/gi,
-    /\b(surround(ing)?[- ]?shot)\b/gi,
-    /\b(orbit(ing)?)\b/gi,
-    /\b(arc(ing)?[- ]?(left|right)?)\b/gi,
-    /\b(camera\s+(slowly\s+)?(moves?|pans?|tilts?|tracks?|zooms?|dollies?|pushes?|pulls?|cranes?|orbits?|arcs?|follows?)[^,.]*)/gi,
-  ];
-
-  for (const pattern of cameraMovementPatterns) {
-    description = description.replace(pattern, '');
-  }
-
-  // Clean up extra whitespace and punctuation
-  description = description
-    .replace(/\s+/g, ' ')
-    .replace(/\s*,\s*,/g, ',')
-    .replace(/\s*\.\s*\./g, '.')
-    .replace(/^\s*[,.\s]+/, '')
-    .replace(/[,.\s]+\s*$/, '')
-    .trim();
-
-  return description;
+  // Clean up and return
+  return firstSentence.replace(/\s+/g, ' ').trim();
 };
 
 /**
@@ -909,8 +839,9 @@ export const generateStoryboard2 = async (
 /**
  * Build Seedance prompt following the official Seedance 1.5 Pro prompt guide
  * Formula: Subject + Movement + Environment + Camera movement + Aesthetic description + Sound
+ * Exported for copy prompt feature in Production view
  */
-const buildSeedancePrompt = (
+export const buildSeedancePrompt = (
   scene: Scene,
   style: string,
   voiceMode: VoiceMode,
@@ -955,6 +886,51 @@ const buildSeedancePrompt = (
   }
 
   return parts.join('\n\n');
+};
+
+/**
+ * Build Veo prompt for video generation
+ * Exported for copy prompt feature in Production view
+ */
+export const buildVeoPrompt = (
+  scene: Scene,
+  voiceMode: VoiceMode,
+  characters?: Character[],
+  language: string = 'english'
+): string => {
+  const languageUpper = language.toUpperCase();
+
+  // Build dialogue prompt if speech_in_video mode
+  const dialoguePrompt = voiceMode === 'speech_in_video'
+    ? buildDialoguePrompt(scene, characters, language)
+    : '';
+
+  // Build audio instructions
+  const audioInstructions = voiceMode === 'speech_in_video'
+    ? `AUDIO INSTRUCTIONS:
+- Include ambient sound effects matching the scene atmosphere (wind, footsteps, environment sounds, etc.)
+- ABSOLUTELY NO BACKGROUND MUSIC - we will add our own music track in post-production.
+- NO musical score, NO soundtrack, NO instrumental music of any kind.
+- CRITICAL: All dialogue MUST be spoken in ${languageUpper} language only. Do NOT use any other language.
+- Characters should speak the provided dialogue naturally with their described voice characteristics.
+- Ensure lip sync matches the spoken words.`
+    : `AUDIO INSTRUCTIONS:
+- Include ambient sound effects matching the scene atmosphere (wind, footsteps, environment sounds, etc.)
+- ABSOLUTELY NO BACKGROUND MUSIC - we will add our own music track in post-production.
+- NO musical score, NO soundtrack, NO instrumental music of any kind.
+- NO DIALOGUE or spoken words - voiceover will be added separately.`;
+
+  return `Visuals: ${scene.visualDescription}.
+Audio Atmosphere: ${scene.audioDescription}.
+${dialoguePrompt}
+
+PACING INSTRUCTION: The output video will be ~8 seconds long (fixed).
+This scene is exactly 8 seconds.
+CRITICAL: Ensure the primary action described happens IMMEDIATELY and concludes efficiently. Do not pad the start with static frames.
+
+${audioInstructions}
+
+Cinematic lighting, consistent style with input image.`;
 };
 
 // Generate video using Seedance API
