@@ -569,8 +569,9 @@ export const generateScript = async (
 };
 
 /**
- * Extract static scene description from visualDescription, removing camera movements
- * Camera movements are for video generation, not storyboard images
+ * Extract static scene description from visualDescription, removing camera movements and shot types
+ * Camera movements and shot types are for video generation, not storyboard images
+ * IMPORTANT: Each panel should only describe ONE action/moment to avoid confusing the grid generator
  */
 const extractStaticDescription = (visualDescription: string): string => {
   let description = visualDescription;
@@ -580,6 +581,42 @@ const extractStaticDescription = (visualDescription: string): string => {
 
   // Remove "Shot 1:" / "Shot 2:" prefixes (Seedance multi-shot format)
   description = description.replace(/Shot \d+:\s*/gi, '');
+
+  // Remove secondary actions that start with "shot of" - these are cut descriptions that leaked through
+  description = description.replace(/\.?\s*shot of\s.*/gi, '');
+
+  // Remove secondary actions after "cut to" or "cuts to"
+  description = description.replace(/\.?\s*cuts?\s+to\s.*/gi, '');
+
+  // Remove anything after "then" that describes a different action
+  description = description.replace(/\.?\s*then\s+(she|he|they|it|the)\s.*/gi, '');
+
+  // Remove camera shot types that confuse grid image generation
+  const shotTypePatterns = [
+    /\b(wide[- ]?shot\.?)\s*/gi,
+    /\b(full[- ]?shot\.?)\s*/gi,
+    /\b(medium[- ]?(shot|close[- ]?up)\.?)\s*/gi,
+    /\b(close[- ]?up\.?)\s*/gi,
+    /\b(closeup\.?)\s*/gi,
+    /\b(extreme[- ]?close[- ]?up\.?)\s*/gi,
+    /\b(big[- ]?close[- ]?up\.?)\s*/gi,
+    /\b(over[- ]?the[- ]?shoulder[- ]?(shot)?\.?)\s*/gi,
+    /\b(low[- ]?angle[- ]?(shot)?\.?)\s*/gi,
+    /\b(high[- ]?angle[- ]?(shot)?\.?)\s*/gi,
+    /\b(bird'?s?[- ]?eye[- ]?(view|shot)?\.?)\s*/gi,
+    /\b(dutch[- ]?angle\.?)\s*/gi,
+    /\b(eye[- ]?level[- ]?(shot)?\.?)\s*/gi,
+    /\b(establishing[- ]?shot\.?)\s*/gi,
+    /\b(two[- ]?shot\.?)\s*/gi,
+    /\b(insert[- ]?shot\.?)\s*/gi,
+    /\b(aerial[- ]?shot\.?)\s*/gi,
+    /\b(pov[- ]?(shot)?\.?)\s*/gi,
+    /\b(point[- ]?of[- ]?view[- ]?(shot)?\.?)\s*/gi,
+  ];
+
+  for (const pattern of shotTypePatterns) {
+    description = description.replace(pattern, '');
+  }
 
   // Remove camera movement instructions that confuse image generation
   const cameraMovementPatterns = [
@@ -730,7 +767,8 @@ export const generateStoryboard = async (script: Script, refImages?: string[], a
 };
 
 /**
- * Build the prompt for second storyboard (3x2 grid) - exported for copying
+ * Build the prompt for second storyboard (3x3 grid with blank bottom row) - exported for copying
+ * Uses same format as first grid for consistency, but only panels 1-6 have content
  */
 export const buildStoryboard2Prompt = (script: Script, aspectRatio: AspectRatio = '16:9'): string => {
   // Get scenes 10-15 (indices 9-14)
@@ -739,49 +777,63 @@ export const buildStoryboard2Prompt = (script: Script, aspectRatio: AspectRatio 
   // Extract STATIC scene descriptions, stripping camera movements that are meant for video
   const sceneDescriptions = scenes10to15.map((s, i) => {
     const staticDescription = extractStaticDescription(s.visualDescription);
-    return `${i + 1}. ${staticDescription}`;
+    return `Panel ${i + 1}: ${staticDescription}`;
   }).join("\n");
 
-  // Determine grid aspect ratio based on panel aspect ratio
+  // Build explicit layout instructions based on aspect ratio (same as first grid)
   const isPortrait = aspectRatio === '9:16';
-  const gridAspectRatio = isPortrait ? '4:5' : '16:9';
+  const layoutInstructions = isPortrait
+    ? `CRITICAL PANEL SHAPE - PORTRAIT MODE:
+    - The overall grid image should be TALLER than it is WIDE (portrait orientation).
+    - Each of the 9 panels must be VERTICAL/PORTRAIT (taller than wide), like a phone screen or TikTok video.
+    - Panel dimensions: each panel is 9 units wide × 16 units tall (9:16 aspect ratio).
+    - Grid dimensions: 3 columns × 3 rows = 27 units wide × 48 units tall total.
+    - Think of it as 9 vertical smartphone screens arranged in a 3×3 pattern.`
+    : `CRITICAL PANEL SHAPE - LANDSCAPE MODE:
+    - The overall grid image should be WIDER than it is TALL (landscape orientation).
+    - Each of the 9 panels must be HORIZONTAL/LANDSCAPE (wider than tall), like a movie screen.
+    - Panel dimensions: each panel is 16 units wide × 9 units tall (16:9 aspect ratio).
+    - Grid dimensions: 3 columns × 3 rows = 48 units wide × 27 units tall total.
+    - Think of it as 9 widescreen TV frames arranged in a 3×3 pattern.`;
 
-  // Build panel proportions description
-  const panelProportions = isPortrait
-    ? 'true 9:16 portrait proportions (taller than wide)'
-    : 'true 16:9 landscape proportions (wider than tall)';
+  return `Art Style: ${script.style}
 
-  return `Create one single image in aspect ratio ${gridAspectRatio}.
-
-Attached images + purpose:
+Create a professional 3×3 cinematic storyboard grid for the FINAL 6 scenes of a 15-scene story.
 The attached reference images show the same characters/subjects from earlier in this story.
 Use them as exact reference for character faces, hair, outfits, proportions, and overall design.
 Keep all characters perfectly consistent with these references in every panel.
 
-Layout (must follow):
-The image must contain a perfectly centered 3×2 grid with thin clean gutters.
-Each of the 6 cells must be ${panelProportions} (no stretching).
-The grid should span the full width of the ${gridAspectRatio} canvas, with slight even padding at the top and bottom to keep the panel proportions correct.
-Panel order: top row = 1, 2, 3 ; bottom row = 4, 5, 6.
+${layoutInstructions}
 
-Style / baseline look:
-${script.style}. Clean composition, cinematic lighting, subtle bloom, crisp highlights, controlled shadows, polished color grading. Cohesive palette across all panels matching the reference images.
+GRID STRUCTURE - STRICT UNIFORM LAYOUT:
+- The 9 panels must fill the ENTIRE image edge-to-edge with NO gaps, borders, or white space.
+- Each panel must be EXACTLY 1/3 of the total width and EXACTLY 1/3 of the total height.
+- ALL 9 PANELS MUST BE IDENTICAL IN SIZE - no exceptions.
+- This is NOT a manga or comic layout - do NOT vary panel sizes for dramatic effect.
+- NO margins, padding, or frames around or between panels.
+- The panels must touch each other directly - seamless grid like a tic-tac-toe board.
+- Top row: panels 1, 2, 3 (left to right)
+- Middle row: panels 4, 5, 6 (left to right)
+- Bottom row: panels 7, 8, 9 (left to right) - LEAVE THESE BLANK (solid black)
+- Think of this as a 3×3 photo grid where every cell is exactly the same size.
 
-Hard rules:
-All characters must remain 100% consistent with their reference images across all panels (no redesigns, no outfit changes, no hairstyle changes).
-No new characters fully shown (background silhouettes ok).
-No text, no logos, no watermarks.
-Correct anatomy and hands (no extra fingers), sharp focus on faces when close-up.
+IMPORTANT - BLANK BOTTOM ROW:
+- Panels 7, 8, and 9 (the entire bottom row) must be SOLID BLACK - no content, no imagery.
+- Only panels 1-6 contain story scenes.
+- This is intentional - do not put any content in the bottom row.
 
-Story (Panels 1–6) — Final act of a 15-scene story:
+Ensure consistent characters, lighting, and style across all 6 story panels.
+
+Story Scenes (Panels 1-6 only):
 ${sceneDescriptions}
 
-Panel 6 is the FINAL scene - it should feel like a conclusion with strong cinematic atmosphere.`;
+Panel 6 is the FINAL scene of the entire story - it should feel like a satisfying conclusion.`;
 };
 
 /**
- * Generate second 3x2 storyboard grid for Seedance mode (scenes 10-15)
- * Uses the first grid as a style reference along with any user-provided reference images
+ * Generate second storyboard as 3x3 grid with blank bottom row for Seedance mode (scenes 10-15)
+ * Uses same grid format as first storyboard for consistency, but only top 6 panels have content
+ * Uses the first grid panels as style reference along with any user-provided reference images
  */
 export const generateStoryboard2 = async (
   script: Script,
@@ -798,10 +850,6 @@ export const generateStoryboard2 = async (
   }
 
   const prompt = buildStoryboard2Prompt(script, aspectRatio);
-
-  // Determine grid aspect ratio for image config
-  const isPortrait = aspectRatio === '9:16';
-  const gridAspectRatio = isPortrait ? '4:5' : '16:9';
 
   const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [{ text: prompt }];
 
@@ -829,6 +877,7 @@ export const generateStoryboard2 = async (
   }
 
   try {
+    // Use same aspect ratio as first grid for consistency
     const response = await withTimeout(
       ai.models.generateContent({
         model: "gemini-3-pro-image-preview",
@@ -836,7 +885,7 @@ export const generateStoryboard2 = async (
         config: {
           safetySettings,
           imageConfig: {
-            aspectRatio: gridAspectRatio,
+            aspectRatio: aspectRatio,  // Same as first grid (16:9 or 9:16)
             imageSize: "2K"
           }
         }

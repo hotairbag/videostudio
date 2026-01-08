@@ -6,7 +6,7 @@ import Storyboard from '@/components/Storyboard';
 import Production from '@/components/Production';
 import { generateScript, generateStoryboard, generateStoryboard2, generateVideoForScene, generateMasterAudio, setApiKey, getApiKey } from '@/services/geminiService';
 import { generateBackgroundMusic } from '@/services/musicService';
-import { sliceGridImage, sliceGrid3x2Image } from '@/utils/imageUtils';
+import { sliceGridImage } from '@/utils/imageUtils';
 import { AppState, AspectRatio, VideoModel, SeedanceResolution, VoiceMode, SeedanceSceneCount, ReferenceImages } from '@/types';
 
 declare global {
@@ -232,8 +232,9 @@ export default function VideoStudio() {
       const frames1 = await sliceGridImage(state.storyboardUrl, state.aspectRatio);
 
       if (state.videoModel === 'seedance-1.5' && seedanceSceneCount === 15 && state.storyboardUrl2) {
-        // Slice second grid (3x2 = 6 frames) for Seedance with 15 scenes
-        const frames2 = await sliceGrid3x2Image(state.storyboardUrl2, state.aspectRatio);
+        // Slice second grid (3x3 with blank bottom row, take only first 6 panels) for Seedance with 15 scenes
+        const allFrames2 = await sliceGridImage(state.storyboardUrl2, state.aspectRatio);
+        const frames2 = allFrames2.slice(0, 6); // Only use panels 1-6, ignore blank bottom row
         const allFrames = [...frames1, ...frames2];
         setState(prev => ({ ...prev, frames: allFrames, step: 'production', isConfirming: false }));
       } else {
