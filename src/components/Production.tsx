@@ -526,14 +526,14 @@ const Production: React.FC<ProductionProps> = ({
 
           {/* Caption toggle - available with partial videos */}
           {hasEnoughToWatch && !isExporting && (
-            <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer hover:text-white transition-colors">
+            <label className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-neutral-300 cursor-pointer hover:text-white hover:bg-neutral-700/50 transition-all border border-neutral-700">
               <input
                 type="checkbox"
                 checked={enableCaptions}
                 onChange={(e) => setEnableCaptions(e.target.checked)}
-                className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-red-600 focus:ring-red-500 focus:ring-offset-neutral-900"
+                className="w-4 h-4 rounded border-neutral-500 bg-neutral-700 text-yellow-500 focus:ring-yellow-500 focus:ring-offset-neutral-900 accent-yellow-500"
               />
-              Include Captions
+              Captions
             </label>
           )}
 
