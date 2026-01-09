@@ -92,6 +92,11 @@ const escapeDrawText = (text: string): string => {
     .replace(/%/g, '\\%');
 };
 
+// Font file name for captions (loaded into FFmpeg filesystem)
+const FONT_FILE = 'font.ttf';
+// Google Fonts URL for Roboto Regular
+const FONT_URL = 'https://github.com/google/fonts/raw/main/ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf';
+
 /**
  * Build drawtext filter for captions
  */
@@ -115,21 +120,16 @@ const buildCaptionFilter = (
     const endTime = (index + 1) * clipDuration;
     const yPosition = height - bottomMargin - fontSize * 2;
 
-    // Draw semi-transparent background box
-    filters.push(
-      `drawbox=x=(w-tw)/2-${boxPadding}:y=${yPosition - boxPadding}:w=tw+${boxPadding * 2}:h=th+${boxPadding * 2}:color=black@0.75:t=fill:enable='between(t,${startTime},${endTime})'`
-    );
-
-    // Draw speaker name if present
+    // Draw speaker name if present (with font file)
     if (caption.speaker) {
       filters.push(
-        `drawtext=text='${escapeDrawText(caption.speaker)}':fontsize=${nameSize}:fontcolor=white@0.7:x=(w-tw)/2:y=${yPosition - fontSize}:enable='between(t,${startTime},${endTime})'`
+        `drawtext=fontfile=${FONT_FILE}:text='${escapeDrawText(caption.speaker)}':fontsize=${nameSize}:fontcolor=white@0.7:x=(w-tw)/2:y=${yPosition - fontSize}:enable='between(t,${startTime},${endTime})'`
       );
     }
 
-    // Draw main caption text
+    // Draw main caption text (with font file)
     filters.push(
-      `drawtext=text='${escapeDrawText(caption.text)}':fontsize=${fontSize}:fontcolor=white:x=(w-tw)/2:y=${yPosition}:enable='between(t,${startTime},${endTime})'`
+      `drawtext=fontfile=${FONT_FILE}:text='${escapeDrawText(caption.text)}':fontsize=${fontSize}:fontcolor=white:x=(w-tw)/2:y=${yPosition}:enable='between(t,${startTime},${endTime})'`
     );
   });
 
@@ -210,6 +210,19 @@ export const composeAndExportVideo = async (
     }
   }
 
+  // Download font for captions if enabled
+  let hasFont = false;
+  if (enableCaptions) {
+    onProgress("Downloading font for captions...");
+    try {
+      const fontData = await fetchFile(FONT_URL);
+      await ff.writeFile(FONT_FILE, fontData);
+      hasFont = true;
+    } catch (err) {
+      console.warn("Failed to download font:", err);
+    }
+  }
+
   // Create concat file for video concatenation
   onProgress("Preparing video concatenation...");
   const concatContent = videoFiles.map(v => `file '${v.name}'`).join('\n');
@@ -269,9 +282,9 @@ export const composeAndExportVideo = async (
     audioMix = '[music]';
   }
 
-  // Add caption filter if enabled
+  // Add caption filter if enabled and font is available
   let videoFilter = '';
-  if (enableCaptions) {
+  if (enableCaptions && hasFont) {
     const captionFilter = buildCaptionFilter(scenesWithVideo, clipDuration, width, height);
     if (captionFilter) {
       videoFilter = captionFilter;
@@ -334,6 +347,7 @@ export const composeAndExportVideo = async (
   ];
   if (hasVoiceover) filesToDelete.push('voiceover.mp3');
   if (hasMusic) filesToDelete.push('music.mp3');
+  if (hasFont) filesToDelete.push(FONT_FILE);
 
   for (const file of filesToDelete) {
     try {
