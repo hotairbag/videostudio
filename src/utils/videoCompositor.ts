@@ -94,8 +94,8 @@ const escapeDrawText = (text: string): string => {
 
 // Font file name for captions (loaded into FFmpeg filesystem)
 const FONT_FILE = 'font.ttf';
-// Google Fonts URL for Roboto Regular
-const FONT_URL = 'https://github.com/google/fonts/raw/main/ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf';
+// Roboto font from Google Fonts CDN (has CORS headers)
+const FONT_URL = 'https://fonts.gstatic.com/s/roboto/v30/KFOmCnqEu92Fr1Mu4mxP.ttf';
 
 /**
  * Build drawtext filter for captions
