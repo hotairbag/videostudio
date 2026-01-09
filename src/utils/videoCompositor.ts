@@ -28,7 +28,6 @@ const loadFFmpeg = async (onProgress: (msg: string) => void): Promise<any> => {
 
   // Dynamic import to avoid SSR issues
   const { FFmpeg } = await import('@ffmpeg/ffmpeg');
-  const { toBlobURL } = await import('@ffmpeg/util');
 
   ffmpeg = new FFmpeg();
 
@@ -45,12 +44,12 @@ const loadFFmpeg = async (onProgress: (msg: string) => void): Promise<any> => {
   ffmpegLoading = (async () => {
     onProgress("Loading FFmpeg (first time may take a moment)...");
 
-    // Use CDN for FFmpeg core files
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+    // Use CDN for FFmpeg core files - UMD version for better compatibility
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
 
     await ffmpeg!.load({
-      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+      coreURL: `${baseURL}/ffmpeg-core.js`,
+      wasmURL: `${baseURL}/ffmpeg-core.wasm`,
     });
   })();
 
