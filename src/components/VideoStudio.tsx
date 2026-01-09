@@ -168,18 +168,16 @@ export default function VideoStudio() {
       // Generate first storyboard (3x3 grid - 9 scenes)
       // For Seedance with 15 scenes, pass totalScenes so the model knows the story continues
       const totalScenes = state.videoModel === 'seedance-1.5' ? seedanceSceneCount : 9;
-      const storyboardUrl = await generateStoryboard(script, flatImages, state.aspectRatio, totalScenes);
+      const storyboardResult = await generateStoryboard(script, flatImages, state.aspectRatio, totalScenes);
 
       if (state.videoModel === 'seedance-1.5' && seedanceSceneCount === 15) {
         // For Seedance with 15 scenes: also generate second storyboard (3x2 grid - 6 more scenes)
-        // Slice first storyboard into individual panels for style reference
-        const panels = await sliceGridImage(storyboardUrl, state.aspectRatio);
-        const stylePanels = panels.slice(0, 3);
-        const storyboardUrl2 = await generateStoryboard2(script, stylePanels, flatImages, state.aspectRatio);
+        // Send full first grid as style reference for visual consistency
+        const storyboardUrl2 = await generateStoryboard2(script, storyboardResult.imageDataUrl, flatImages, state.aspectRatio, storyboardResult.seed);
 
         setState(prev => ({
           ...prev,
-          storyboardUrl,
+          storyboardUrl: storyboardResult.imageDataUrl,
           storyboardUrl2,
           isGeneratingStoryboard: false,
           step: 'storyboard'
@@ -188,7 +186,7 @@ export default function VideoStudio() {
         // For Veo or Seedance with 9 scenes: only single grid
         setState(prev => ({
           ...prev,
-          storyboardUrl,
+          storyboardUrl: storyboardResult.imageDataUrl,
           storyboardUrl2: null,
           isGeneratingStoryboard: false,
           step: 'storyboard'
@@ -206,17 +204,14 @@ export default function VideoStudio() {
     setState(prev => ({ ...prev, isGeneratingStoryboard: true }));
     try {
       const totalScenes = state.videoModel === 'seedance-1.5' ? seedanceSceneCount : 9;
-      const storyboardUrl = await generateStoryboard(state.script, flattenRefImages(refImagesRef.current), state.aspectRatio, totalScenes);
+      const storyboardResult = await generateStoryboard(state.script, flattenRefImages(refImagesRef.current), state.aspectRatio, totalScenes);
 
       if (state.videoModel === 'seedance-1.5' && seedanceSceneCount === 15) {
-        // Regenerate second grid using new first grid as reference
-        // Slice first storyboard into individual panels for style reference
-        const panels = await sliceGridImage(storyboardUrl, state.aspectRatio);
-        const stylePanels = panels.slice(0, 3);
-        const storyboardUrl2 = await generateStoryboard2(state.script, stylePanels, flattenRefImages(refImagesRef.current), state.aspectRatio);
-        setState(prev => ({ ...prev, storyboardUrl, storyboardUrl2, isGeneratingStoryboard: false }));
+        // Regenerate second grid using full first grid as style reference
+        const storyboardUrl2 = await generateStoryboard2(state.script, storyboardResult.imageDataUrl, flattenRefImages(refImagesRef.current), state.aspectRatio, storyboardResult.seed);
+        setState(prev => ({ ...prev, storyboardUrl: storyboardResult.imageDataUrl, storyboardUrl2, isGeneratingStoryboard: false }));
       } else {
-        setState(prev => ({ ...prev, storyboardUrl, isGeneratingStoryboard: false }));
+        setState(prev => ({ ...prev, storyboardUrl: storyboardResult.imageDataUrl, isGeneratingStoryboard: false }));
       }
     } catch (error) {
       console.error(error);
