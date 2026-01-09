@@ -27,11 +27,11 @@ function renderCaption(
   }
 
   // Style constants matching reference screenshot
-  const padding = 20;
-  const margin = 40;
+  const padding = 16;
+  const margin = 30;
   const maxWidth = canvasWidth - (margin * 2);
-  const fontSize = Math.round(canvasHeight * 0.035); // ~25px for 720p
-  const nameSize = Math.round(fontSize * 0.7);
+  const fontSize = Math.round(canvasHeight * 0.025); // ~18px for 720p
+  const nameSize = Math.round(fontSize * 0.75);
   const lineHeight = fontSize * 1.4;
   const radius = 12;
 
