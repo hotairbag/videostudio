@@ -94,8 +94,8 @@ const escapeDrawText = (text: string): string => {
 
 // Font file name for captions (loaded into FFmpeg filesystem)
 const FONT_FILE = 'font.ttf';
-// Roboto font from Google Fonts CDN (has CORS headers)
-const FONT_URL = 'https://fonts.gstatic.com/s/roboto/v30/KFOmCnqEu92Fr1Mu4mxP.ttf';
+// Roboto font proxied through our API to avoid CORS issues
+const FONT_URL = '/api/proxy-font';
 
 /**
  * Build drawtext filter for captions
@@ -215,11 +215,15 @@ export const composeAndExportVideo = async (
   if (enableCaptions) {
     onProgress("Downloading font for captions...");
     try {
+      console.log('[FFmpeg] Fetching font from:', FONT_URL);
       const fontData = await fetchFile(FONT_URL);
+      console.log('[FFmpeg] Font downloaded, size:', fontData.byteLength, 'bytes');
       await ff.writeFile(FONT_FILE, fontData);
       hasFont = true;
+      console.log('[FFmpeg] Font written to filesystem successfully');
     } catch (err) {
-      console.warn("Failed to download font:", err);
+      console.error("Failed to download font:", err);
+      onProgress("Warning: Could not load font, captions will be skipped");
     }
   }
 
@@ -285,10 +289,16 @@ export const composeAndExportVideo = async (
   // Add caption filter if enabled and font is available
   let videoFilter = '';
   if (enableCaptions && hasFont) {
+    console.log('[FFmpeg] Building caption filter for', scenesWithVideo.length, 'scenes');
     const captionFilter = buildCaptionFilter(scenesWithVideo, clipDuration, width, height);
     if (captionFilter) {
       videoFilter = captionFilter;
+      console.log('[FFmpeg] Caption filter built successfully');
+    } else {
+      console.log('[FFmpeg] No captions to render (all scenes empty)');
     }
+  } else if (enableCaptions && !hasFont) {
+    console.log('[FFmpeg] Captions enabled but font not available, skipping');
   }
 
   // Build final FFmpeg command
