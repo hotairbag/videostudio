@@ -1,5 +1,105 @@
-import { Scene, AspectRatio, VideoModel } from "@/types";
+import { Scene, AspectRatio, VideoModel, Character } from "@/types";
 import { getCanvasDimensions } from "./imageUtils";
+
+/**
+ * Renders a caption overlay on the canvas for the current scene.
+ * Shows speaker name (if single speaker, not narrator) above dialogue text.
+ * Style matches reference: dark rounded background, speaker name smaller/lighter.
+ */
+function renderCaption(
+  ctx: CanvasRenderingContext2D,
+  scene: Scene,
+  canvasWidth: number,
+  canvasHeight: number
+): void {
+  // Get text content - prefer dialogue array, fall back to voiceoverText
+  const dialogueLines = scene.dialogue || [];
+  const text = dialogueLines.length > 0
+    ? dialogueLines.map(d => d.text).join(' ')
+    : scene.voiceoverText;
+
+  if (!text || text.trim().length === 0) return;
+
+  // Only show speaker name if SINGLE speaker and not narrator
+  let speakerName = '';
+  if (dialogueLines.length === 1 && dialogueLines[0].speaker && dialogueLines[0].speaker !== 'narrator') {
+    speakerName = dialogueLines[0].speaker;
+  }
+
+  // Style constants matching reference screenshot
+  const padding = 20;
+  const margin = 40;
+  const maxWidth = canvasWidth - (margin * 2);
+  const fontSize = Math.round(canvasHeight * 0.035); // ~25px for 720p
+  const nameSize = Math.round(fontSize * 0.7);
+  const lineHeight = fontSize * 1.4;
+  const radius = 12;
+
+  // Setup font for text measurement
+  ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+
+  // Wrap text to fit within maxWidth
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let currentLine = '';
+
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    const testWidth = ctx.measureText(testLine).width;
+    if (testWidth > maxWidth - padding * 2) {
+      if (currentLine) lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = testLine;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+
+  // Calculate box dimensions
+  const textHeight = lines.length * lineHeight;
+  const nameHeight = speakerName ? nameSize + 8 : 0;
+  const boxHeight = textHeight + nameHeight + padding * 2;
+
+  // Calculate box width based on widest line
+  let maxLineWidth = 0;
+  for (const line of lines) {
+    const lineWidth = ctx.measureText(line).width;
+    if (lineWidth > maxLineWidth) maxLineWidth = lineWidth;
+  }
+  // Also consider speaker name width
+  if (speakerName) {
+    ctx.font = `${nameSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    const nameWidth = ctx.measureText(speakerName).width;
+    if (nameWidth > maxLineWidth) maxLineWidth = nameWidth;
+  }
+
+  const boxWidth = Math.min(maxLineWidth + padding * 2, maxWidth);
+  const boxX = (canvasWidth - boxWidth) / 2;
+  const boxY = canvasHeight - boxHeight - margin;
+
+  // Draw rounded rectangle background
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+  ctx.beginPath();
+  ctx.roundRect(boxX, boxY, boxWidth, boxHeight, radius);
+  ctx.fill();
+
+  // Draw speaker name (if exists) - smaller, lighter
+  let textY = boxY + padding;
+  if (speakerName) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.font = `${nameSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.fillText(speakerName, boxX + padding, textY + nameSize);
+    textY += nameSize + 8;
+  }
+
+  // Draw dialogue text - larger, white
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+  for (const line of lines) {
+    ctx.fillText(line, boxX + padding, textY + fontSize);
+    textY += lineHeight;
+  }
+}
 
 // Video duration per clip based on model
 // Veo generates ~8 second videos
@@ -18,7 +118,8 @@ export const composeAndExportVideo = async (
   aspectRatio: AspectRatio = '16:9',
   videoModel: VideoModel = 'veo-3.1',
   includeMusic: boolean = true,
-  customClipDuration?: number  // Override the model-based duration
+  customClipDuration?: number,  // Override the model-based duration
+  enableCaptions: boolean = false  // Render captions on video
 ): Promise<Blob> => {
 
   // Use custom duration if provided, otherwise fall back to model-based duration
@@ -267,6 +368,11 @@ export const composeAndExportVideo = async (
           console.warn('drawImage failed:', err);
           ctx.fillStyle = '#000';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // Render captions on top of video if enabled
+        if (enableCaptions) {
+          renderCaption(ctx, currentScene, canvas.width, canvas.height);
         }
       } else {
         ctx.fillStyle = '#000';

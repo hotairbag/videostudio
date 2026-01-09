@@ -68,7 +68,8 @@ describe('VideoStudio', () => {
       render(<VideoStudio />);
 
       expect(screen.getByText(/GenDirector/)).toBeInTheDocument();
-      expect(screen.getByText(/New Project/)).toBeInTheDocument();
+      // Form should be visible with textarea
+      expect(screen.getByPlaceholderText(/describe your video story/i)).toBeInTheDocument();
     });
   });
 
@@ -80,8 +81,9 @@ describe('VideoStudio', () => {
     it('should render InputForm in input step', () => {
       render(<VideoStudio />);
 
-      expect(screen.getByText('New Project')).toBeInTheDocument();
-      expect(screen.getByPlaceholderText(/describe your video/i)).toBeInTheDocument();
+      // Form has textarea and submit button
+      expect(screen.getByPlaceholderText(/describe your video story/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /generate storyboard/i })).toBeInTheDocument();
     });
 
     it('should show loading state during script generation', async () => {
@@ -89,14 +91,14 @@ describe('VideoStudio', () => {
 
       render(<VideoStudio />);
 
-      const textarea = screen.getByPlaceholderText(/describe your video/i);
+      const textarea = screen.getByPlaceholderText(/describe your video story/i);
       await userEvent.type(textarea, 'A cat video');
 
       const submitButton = screen.getByRole('button', { name: /generate storyboard/i });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
-        expect(screen.getByText(/generating script/i)).toBeInTheDocument();
+        expect(screen.getByText(/generating\.\.\./i)).toBeInTheDocument();
       });
     });
   });
@@ -114,11 +116,12 @@ describe('VideoStudio', () => {
       };
 
       generateScript.mockResolvedValue(mockScript);
-      generateStoryboard.mockResolvedValue('data:image/png;base64,storyboard');
+      // generateStoryboard now returns {imageDataUrl, seed}
+      generateStoryboard.mockResolvedValue({ imageDataUrl: 'data:image/png;base64,storyboard', seed: 12345 });
 
       render(<VideoStudio />);
 
-      const textarea = screen.getByPlaceholderText(/describe your video/i);
+      const textarea = screen.getByPlaceholderText(/describe your video story/i);
       await userEvent.type(textarea, 'A cat video');
 
       const submitButton = screen.getByRole('button', { name: /generate storyboard/i });
@@ -137,12 +140,13 @@ describe('VideoStudio', () => {
       };
 
       generateScript.mockResolvedValue(mockScript);
-      generateStoryboard.mockResolvedValue('data:image/png;base64,storyboard');
+      // generateStoryboard now returns {imageDataUrl, seed}
+      generateStoryboard.mockResolvedValue({ imageDataUrl: 'data:image/png;base64,storyboard', seed: 12345 });
       sliceGridImage.mockResolvedValue(['frame1', 'frame2', 'frame3', 'frame4', 'frame5', 'frame6', 'frame7', 'frame8', 'frame9']);
 
       render(<VideoStudio />);
 
-      const textarea = screen.getByPlaceholderText(/describe your video/i);
+      const textarea = screen.getByPlaceholderText(/describe your video story/i);
       await userEvent.type(textarea, 'A cat video');
 
       const submitButton = screen.getByRole('button', { name: /generate storyboard/i });
@@ -190,7 +194,7 @@ describe('VideoStudio', () => {
 
       render(<VideoStudio />);
 
-      const textarea = screen.getByPlaceholderText(/describe your video/i);
+      const textarea = screen.getByPlaceholderText(/describe your video story/i);
       await userEvent.type(textarea, 'A cat video');
 
       const submitButton = screen.getByRole('button', { name: /generate storyboard/i });

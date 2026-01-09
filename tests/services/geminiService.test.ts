@@ -116,14 +116,11 @@ describe('geminiService', () => {
 
       const result = await generateScript('Make a video about cats');
 
-      expect(mockGenerateContent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          model: 'gemini-3-pro-preview',
-          config: expect.objectContaining({
-            responseMimeType: 'application/json',
-          }),
-        })
-      );
+      // Verify generateContent was called with correct model
+      expect(mockGenerateContent).toHaveBeenCalled();
+      const callArgs = mockGenerateContent.mock.calls[0][0];
+      expect(callArgs.model).toBe('gemini-3-flash-preview');
+      expect(callArgs.config.responseMimeType).toBe('application/json');
       expect(result).toEqual(mockScript);
     });
 
@@ -251,7 +248,11 @@ describe('geminiService', () => {
           model: 'gemini-3-pro-image-preview',
         })
       );
-      expect(result).toBe('data:image/png;base64,base64imagedata');
+      // Now returns object with imageDataUrl and seed
+      expect(result).toEqual({
+        imageDataUrl: 'data:image/png;base64,base64imagedata',
+        seed: expect.any(Number)
+      });
     });
 
     it('should throw error if no image generated', async () => {
@@ -336,7 +337,7 @@ describe('geminiService', () => {
       })),
     };
 
-    it('should use 21:9 aspect ratio for 16:9 landscape second storyboard grid', async () => {
+    it('should use 16:9 aspect ratio for landscape second storyboard grid', async () => {
       setApiKey('test-key');
 
       const { GoogleGenAI } = require('@google/genai');
@@ -354,15 +355,15 @@ describe('geminiService', () => {
       }));
 
       const { generateStoryboard2 } = require('@/services/geminiService');
-      const mockStylePanels = ['data:image/png;base64,abc', 'data:image/png;base64,def'];
+      const mockFirstGrid = 'data:image/png;base64,abc';
 
-      await generateStoryboard2(mockScript15Scenes, mockStylePanels, undefined, '16:9');
+      await generateStoryboard2(mockScript15Scenes, mockFirstGrid, undefined, '16:9');
 
-      // Verify the image config uses 16:9 aspect ratio for landscape (closest supported ratio)
+      // Verify the image config uses 16:9 aspect ratio for landscape
       const callArgs = mockGenerateContent.mock.calls[0][0];
       expect(callArgs.config.imageConfig.aspectRatio).toBe('16:9');
-      // The prompt describes landscape orientation
-      expect(callArgs.contents.parts[0].text).toContain('LANDSCAPE MODE');
+      // The prompt describes landscape proportions
+      expect(callArgs.contents.parts[0].text).toContain('16:9 landscape proportions');
     });
 
     it('should use 4:5 aspect ratio for 9:16 portrait second storyboard grid', async () => {
@@ -383,19 +384,18 @@ describe('geminiService', () => {
       }));
 
       const { generateStoryboard2 } = require('@/services/geminiService');
-      const mockStylePanels = ['data:image/png;base64,abc'];
+      const mockFirstGrid = 'data:image/png;base64,abc';
 
-      await generateStoryboard2(mockScript15Scenes, mockStylePanels, undefined, '9:16');
+      await generateStoryboard2(mockScript15Scenes, mockFirstGrid, undefined, '9:16');
 
       // Verify the image config uses 4:5 aspect ratio for portrait
       const callArgs = mockGenerateContent.mock.calls[0][0];
       expect(callArgs.config.imageConfig.aspectRatio).toBe('4:5');
-      // The prompt mentions portrait mode and 9:16 aspect ratio
-      expect(callArgs.contents.parts[0].text).toContain('PORTRAIT MODE');
-      expect(callArgs.contents.parts[0].text).toContain('9:16 aspect ratio');
+      // The prompt mentions portrait proportions
+      expect(callArgs.contents.parts[0].text).toContain('9:16 portrait proportions');
     });
 
-    it('should include style consistency instructions', async () => {
+    it('should include grid layout and style instructions', async () => {
       setApiKey('test-key');
 
       const { GoogleGenAI } = require('@google/genai');
@@ -413,15 +413,15 @@ describe('geminiService', () => {
       }));
 
       const { generateStoryboard2 } = require('@/services/geminiService');
-      const mockStylePanels = ['data:image/png;base64,abc'];
+      const mockFirstGrid = 'data:image/png;base64,abc';
 
-      await generateStoryboard2(mockScript15Scenes, mockStylePanels, undefined, '16:9');
+      await generateStoryboard2(mockScript15Scenes, mockFirstGrid, undefined, '16:9');
 
-      // Verify the prompt includes style consistency instructions
+      // Verify the prompt includes grid and style instructions
       const callArgs = mockGenerateContent.mock.calls[0][0];
       const promptText = callArgs.contents.parts[0].text;
-      expect(promptText).toContain('CRITICAL STYLE CONSISTENCY');
-      expect(promptText).toContain('scenes 10-15 of a 15-scene story');
+      expect(promptText).toContain('3×2 grid');
+      expect(promptText).toContain('FINAL 6 scenes of a 15-scene story');
     });
   });
 

@@ -306,6 +306,7 @@ const Production: React.FC<ProductionProps> = ({
   const [playingAudio, setPlayingAudio] = useState<'music' | 'voiceover' | null>(null);
   const [showProjectOverview, setShowProjectOverview] = useState(false);
   const [copiedSceneId, setCopiedSceneId] = useState<number | null>(null);
+  const [enableCaptions, setEnableCaptions] = useState(false);
 
   // Copy video prompt for a scene
   const handleCopyPrompt = async (scene: Scene) => {
@@ -380,14 +381,16 @@ const Production: React.FC<ProductionProps> = ({
         aspectRatio,
         videoModel,
         includeMusic,
-        clipDuration  // Pass the configured clip duration
+        clipDuration,  // Pass the configured clip duration
+        enableCaptions  // Pass caption toggle state
       );
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const suffix = includeMusic && backgroundMusicUrl ? '' : '_NoMusic';
-      a.download = `${script.title.replace(/\s+/g, '_')}${suffix}.webm`;
+      const captionSuffix = enableCaptions ? '_Captions' : '';
+      const musicSuffix = includeMusic && backgroundMusicUrl ? '' : '_NoMusic';
+      a.download = `${script.title.replace(/\s+/g, '_')}${captionSuffix}${musicSuffix}.webm`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -519,6 +522,19 @@ const Production: React.FC<ProductionProps> = ({
               {generatedCount}/{totalScenes} videos
               {failedCount > 0 && <span className="text-yellow-500"> ({failedCount} failed)</span>}
             </div>
+          )}
+
+          {/* Caption toggle - available with partial videos */}
+          {hasEnoughToWatch && !isExporting && (
+            <label className="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer hover:text-white transition-colors">
+              <input
+                type="checkbox"
+                checked={enableCaptions}
+                onChange={(e) => setEnableCaptions(e.target.checked)}
+                className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-red-600 focus:ring-red-500 focus:ring-offset-neutral-900"
+              />
+              Include Captions
+            </label>
           )}
 
           {/* Watch/Download buttons - available with partial videos */}

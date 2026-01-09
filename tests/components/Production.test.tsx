@@ -3,6 +3,26 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import Production from '@/components/Production';
 import { Script, Scene } from '@/types';
 
+// Mock @google/genai to prevent ESM import issues
+jest.mock('@google/genai', () => ({
+  GoogleGenAI: jest.fn(),
+  Type: { OBJECT: 'object', STRING: 'string', ARRAY: 'array', INTEGER: 'integer' },
+  Modality: { AUDIO: 'AUDIO' },
+  HarmCategory: {
+    HARM_CATEGORY_HATE_SPEECH: 'HARM_CATEGORY_HATE_SPEECH',
+    HARM_CATEGORY_DANGEROUS_CONTENT: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+    HARM_CATEGORY_SEXUALLY_EXPLICIT: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+    HARM_CATEGORY_HARASSMENT: 'HARM_CATEGORY_HARASSMENT',
+  },
+  HarmBlockThreshold: { BLOCK_NONE: 'BLOCK_NONE' },
+}));
+
+// Mock the geminiService
+jest.mock('@/services/geminiService', () => ({
+  buildSeedancePrompt: jest.fn().mockReturnValue('mocked seedance prompt'),
+  buildVeoPrompt: jest.fn().mockReturnValue('mocked veo prompt'),
+}));
+
 // Mock the videoCompositor
 jest.mock('@/utils/videoCompositor', () => ({
   composeAndExportVideo: jest.fn().mockResolvedValue(new Blob(['video'], { type: 'video/webm' })),
