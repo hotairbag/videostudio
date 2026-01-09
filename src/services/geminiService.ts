@@ -632,16 +632,14 @@ ${continuationNote}
 ${layoutInstructions}
 
 GRID STRUCTURE - STRICT UNIFORM LAYOUT:
-- The 9 panels must fill the ENTIRE image edge-to-edge with NO gaps, borders, or white space.
+- ZERO PADDING. No grid lines, no gutters, no white space, no borders. The panels must touch each other seamlessly edge-to-edge.
 - Each panel must be EXACTLY 1/3 of the total width and EXACTLY 1/3 of the total height.
 - ALL 9 PANELS MUST BE IDENTICAL IN SIZE - no exceptions.
 - This is NOT a manga or comic layout - do NOT vary panel sizes for dramatic effect.
-- NO margins, padding, or frames around or between panels.
-- The panels must touch each other directly - seamless grid like a tic-tac-toe board.
 - Top row: panels 1, 2, 3 (left to right)
 - Middle row: panels 4, 5, 6 (left to right)
 - Bottom row: panels 7, 8, 9 (left to right)
-- Think of this as a 3×3 photo grid where every cell is exactly the same size.
+- The panels must be flush against each other with absolutely no separation.
 
 Ensure consistent characters, lighting, and style across all 9 panels.
 ${hasRefImages ? 'Use the provided reference image(s) for character designs, art style, and visual consistency.' : ''}
@@ -745,8 +743,8 @@ GRID LAYOUT:
 - Each panel must have ${panelProportions}
 - Top row: panels 1, 2, 3 (left to right)
 - Bottom row: panels 4, 5, 6 (left to right)
-- Panels fill the entire image with thin clean gutters between them
-- NO margins, borders, or extra spacing around the grid
+- ZERO PADDING. No grid lines, no gutters, no white space, no borders. The panels must touch each other seamlessly edge-to-edge.
+- The panels must be flush against each other with absolutely no separation.
 
 STYLE:
 Clean composition, cinematic lighting, subtle bloom, crisp highlights, controlled shadows, polished color grading.
