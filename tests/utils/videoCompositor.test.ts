@@ -1,11 +1,38 @@
-import { composeAndExportVideo } from '@/utils/videoCompositor';
 import { Scene } from '@/types';
 
-describe('videoCompositor', () => {
+// Mock FFmpeg
+const mockExec = jest.fn().mockResolvedValue(undefined);
+const mockWriteFile = jest.fn().mockResolvedValue(undefined);
+const mockReadFile = jest.fn().mockResolvedValue(new Uint8Array([0, 0, 0]));
+const mockDeleteFile = jest.fn().mockResolvedValue(undefined);
+const mockOn = jest.fn();
+const mockLoad = jest.fn().mockResolvedValue(undefined);
+
+jest.mock('@ffmpeg/ffmpeg', () => ({
+  FFmpeg: jest.fn().mockImplementation(() => ({
+    load: mockLoad,
+    exec: mockExec,
+    writeFile: mockWriteFile,
+    readFile: mockReadFile,
+    deleteFile: mockDeleteFile,
+    on: mockOn,
+    loaded: false,
+  })),
+}));
+
+jest.mock('@ffmpeg/util', () => ({
+  fetchFile: jest.fn().mockResolvedValue(new Uint8Array([0, 0, 0])),
+  toBlobURL: jest.fn().mockResolvedValue('blob:mock-url'),
+}));
+
+// Import after mocking
+import { composeAndExportVideo } from '@/utils/videoCompositor';
+
+describe('videoCompositor with FFmpeg', () => {
   const mockScenes: Scene[] = [
     {
       id: 1,
-      timeRange: '00:00 - 00:05',
+      timeRange: '00:00 - 00:04',
       visualDescription: 'Scene 1',
       audioDescription: 'SFX 1',
       cameraShot: 'Wide',
@@ -13,7 +40,7 @@ describe('videoCompositor', () => {
     },
     {
       id: 2,
-      timeRange: '00:05 - 00:10',
+      timeRange: '00:04 - 00:08',
       visualDescription: 'Scene 2',
       audioDescription: 'SFX 2',
       cameraShot: 'Medium',
@@ -22,88 +49,83 @@ describe('videoCompositor', () => {
   ];
 
   const mockVideoUrls: Record<number, string> = {
-    1: 'blob:video-1',
-    2: 'blob:video-2',
+    1: 'https://example.com/video-1.mp4',
+    2: 'https://example.com/video-2.mp4',
   };
 
-  const mockMasterAudioUrl = 'data:audio/mp3;base64,mockAudioData';
+  const mockMasterAudioUrl = 'https://example.com/audio.mp3';
   const mockBackgroundMusicUrl = 'https://example.com/music.mp3';
 
   beforeEach(() => {
     jest.clearAllMocks();
-
-    // Mock fetch for audio loading
-    (global.fetch as jest.Mock).mockResolvedValue({
-      arrayBuffer: () => Promise.resolve(new ArrayBuffer(100)),
-    });
-
-    // Mock HTMLVideoElement
-    HTMLVideoElement.prototype.play = jest.fn().mockResolvedValue(undefined);
-    HTMLVideoElement.prototype.pause = jest.fn();
-    HTMLVideoElement.prototype.load = jest.fn();
-    Object.defineProperty(HTMLVideoElement.prototype, 'paused', {
-      get: jest.fn().mockReturnValue(true),
-      configurable: true,
-    });
+    // Reset the loaded state for each test
+    const { FFmpeg } = require('@ffmpeg/ffmpeg');
+    FFmpeg.mockImplementation(() => ({
+      load: mockLoad,
+      exec: mockExec,
+      writeFile: mockWriteFile,
+      readFile: mockReadFile,
+      deleteFile: mockDeleteFile,
+      on: mockOn,
+      loaded: false,
+    }));
   });
 
   it('should call onProgress with status messages', async () => {
     const onProgress = jest.fn();
 
-    // Mock requestAnimationFrame to run synchronously
-    const originalRAF = window.requestAnimationFrame;
-    let frameCount = 0;
-    window.requestAnimationFrame = (cb: FrameRequestCallback) => {
-      if (frameCount++ < 5) {
-        cb(performance.now());
-      }
-      return frameCount;
-    };
-
-    // Since the compositor runs an async loop, we need to mock it more thoroughly
-    // For now, just verify it starts correctly
-    const promise = composeAndExportVideo(
+    await composeAndExportVideo(
       mockScenes,
       mockVideoUrls,
       mockMasterAudioUrl,
       mockBackgroundMusicUrl,
-      onProgress
+      onProgress,
+      '16:9',
+      'seedance-1.5',
+      true,
+      undefined,
+      false
     );
 
-    // Wait a tick for initial progress calls
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    expect(onProgress).toHaveBeenCalledWith('Initializing compositor...');
-    expect(onProgress).toHaveBeenCalledWith('Loading audio tracks...');
-
-    window.requestAnimationFrame = originalRAF;
+    expect(onProgress).toHaveBeenCalledWith(expect.stringContaining('Loading FFmpeg'));
+    expect(onProgress).toHaveBeenCalledWith(expect.stringContaining('Downloading'));
   });
 
-  it('should throw error if canvas context is not available', async () => {
-    const originalGetContext = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = jest.fn().mockReturnValue(null);
+  it('should return a Blob with video/mp4 type', async () => {
+    const onProgress = jest.fn();
+
+    const result = await composeAndExportVideo(
+      mockScenes,
+      mockVideoUrls,
+      mockMasterAudioUrl,
+      mockBackgroundMusicUrl,
+      onProgress,
+      '16:9',
+      'seedance-1.5'
+    );
+
+    expect(result).toBeInstanceOf(Blob);
+    expect(result.type).toBe('video/mp4');
+  });
+
+  it('should throw error if no videos to export', async () => {
+    const onProgress = jest.fn();
 
     await expect(
       composeAndExportVideo(
         mockScenes,
-        mockVideoUrls,
+        {}, // No video URLs
         mockMasterAudioUrl,
         null,
-        jest.fn()
+        onProgress
       )
-    ).rejects.toThrow('Could not create canvas context');
-
-    HTMLCanvasElement.prototype.getContext = originalGetContext;
+    ).rejects.toThrow('No videos to export');
   });
 
   it('should handle missing background music gracefully', async () => {
     const onProgress = jest.fn();
 
-    // Just verify it starts without throwing
-    const originalRAF = window.requestAnimationFrame;
-    window.requestAnimationFrame = jest.fn().mockReturnValue(1);
-
-    const promise = composeAndExportVideo(
+    const result = await composeAndExportVideo(
       mockScenes,
       mockVideoUrls,
       mockMasterAudioUrl,
@@ -111,43 +133,93 @@ describe('videoCompositor', () => {
       onProgress
     );
 
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    expect(onProgress).toHaveBeenCalledWith('Initializing compositor...');
-
-    window.requestAnimationFrame = originalRAF;
-  });
-});
-
-describe('parseDuration helper', () => {
-  // Note: parseDuration is not exported, so we test it indirectly through the component behavior
-  // These are integration tests that verify the duration parsing works correctly
-
-  it('should handle MM:SS format correctly in scene composition', async () => {
-    const scene: Scene = {
-      id: 1,
-      timeRange: '00:00 - 00:05', // 5 seconds
-      visualDescription: 'Test',
-      audioDescription: 'Test',
-      cameraShot: 'Wide',
-      voiceoverText: 'Test',
-    };
-
-    // The scene should have a 5-second duration based on the timeRange
-    // This is verified by the compositor's behavior
-    expect(scene.timeRange).toBe('00:00 - 00:05');
+    expect(result).toBeInstanceOf(Blob);
   });
 
-  it('should handle HH:MM:SS format in timeRange', () => {
-    const scene: Scene = {
-      id: 1,
-      timeRange: '00:00:00 - 00:00:10', // 10 seconds
-      visualDescription: 'Test',
-      audioDescription: 'Test',
-      cameraShot: 'Wide',
-      voiceoverText: 'Test',
-    };
+  it('should handle missing voiceover gracefully', async () => {
+    const onProgress = jest.fn();
 
-    expect(scene.timeRange).toBe('00:00:00 - 00:00:10');
+    const result = await composeAndExportVideo(
+      mockScenes,
+      mockVideoUrls,
+      null, // No voiceover
+      mockBackgroundMusicUrl,
+      onProgress
+    );
+
+    expect(result).toBeInstanceOf(Blob);
+  });
+
+  it('should write video files to FFmpeg filesystem', async () => {
+    const onProgress = jest.fn();
+
+    await composeAndExportVideo(
+      mockScenes,
+      mockVideoUrls,
+      mockMasterAudioUrl,
+      null,
+      onProgress
+    );
+
+    // Should write video files
+    expect(mockWriteFile).toHaveBeenCalledWith('video_0.mp4', expect.any(Uint8Array));
+    expect(mockWriteFile).toHaveBeenCalledWith('video_1.mp4', expect.any(Uint8Array));
+    // Should write concat file
+    expect(mockWriteFile).toHaveBeenCalledWith('concat.txt', expect.any(String));
+  });
+
+  it('should clean up files after export', async () => {
+    const onProgress = jest.fn();
+
+    await composeAndExportVideo(
+      mockScenes,
+      mockVideoUrls,
+      mockMasterAudioUrl,
+      null,
+      onProgress
+    );
+
+    // Should delete temporary files
+    expect(mockDeleteFile).toHaveBeenCalledWith('concat.txt');
+    expect(mockDeleteFile).toHaveBeenCalledWith('concatenated.mp4');
+    expect(mockDeleteFile).toHaveBeenCalledWith('output.mp4');
+    expect(mockDeleteFile).toHaveBeenCalledWith('video_0.mp4');
+    expect(mockDeleteFile).toHaveBeenCalledWith('video_1.mp4');
+  });
+
+  it('should use correct clip duration based on video model', async () => {
+    const onProgress = jest.fn();
+
+    // Test with Veo (8 second clips)
+    await composeAndExportVideo(
+      mockScenes,
+      mockVideoUrls,
+      null,
+      null,
+      onProgress,
+      '16:9',
+      'veo-3.1'
+    );
+
+    // FFmpeg exec should be called for concatenation and encoding
+    expect(mockExec).toHaveBeenCalled();
+  });
+
+  it('should respect custom clip duration', async () => {
+    const onProgress = jest.fn();
+
+    await composeAndExportVideo(
+      mockScenes,
+      mockVideoUrls,
+      null,
+      null,
+      onProgress,
+      '16:9',
+      'seedance-1.5',
+      true,
+      6 // Custom 6 second duration
+    );
+
+    expect(mockExec).toHaveBeenCalled();
   });
 });

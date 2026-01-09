@@ -390,7 +390,7 @@ const Production: React.FC<ProductionProps> = ({
       a.href = url;
       const captionSuffix = enableCaptions ? '_Captions' : '';
       const musicSuffix = includeMusic && backgroundMusicUrl ? '' : '_NoMusic';
-      a.download = `${script.title.replace(/\s+/g, '_')}${captionSuffix}${musicSuffix}.webm`;
+      a.download = `${script.title.replace(/\s+/g, '_')}${captionSuffix}${musicSuffix}.mp4`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

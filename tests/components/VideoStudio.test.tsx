@@ -1,6 +1,25 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+
+// Mock FFmpeg before importing components that use it
+jest.mock('@ffmpeg/ffmpeg', () => ({
+  FFmpeg: jest.fn().mockImplementation(() => ({
+    load: jest.fn().mockResolvedValue(undefined),
+    exec: jest.fn().mockResolvedValue(undefined),
+    writeFile: jest.fn().mockResolvedValue(undefined),
+    readFile: jest.fn().mockResolvedValue(new Uint8Array([0, 0, 0])),
+    deleteFile: jest.fn().mockResolvedValue(undefined),
+    on: jest.fn(),
+    loaded: false,
+  })),
+}));
+
+jest.mock('@ffmpeg/util', () => ({
+  fetchFile: jest.fn().mockResolvedValue(new Uint8Array([0, 0, 0])),
+  toBlobURL: jest.fn().mockResolvedValue('blob:mock-url'),
+}));
+
 import VideoStudio from '@/components/VideoStudio';
 
 // Mock all service modules

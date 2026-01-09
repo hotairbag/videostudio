@@ -1,127 +1,140 @@
-import { Scene, AspectRatio, VideoModel, Character } from "@/types";
-import { getCanvasDimensions } from "./imageUtils";
+import { Scene, AspectRatio, VideoModel } from "@/types";
+
+// Video duration per clip based on model
+const VIDEO_DURATION_BY_MODEL: Record<VideoModel, number> = {
+  'veo-3.1': 8,
+  'seedance-1.5': 4,
+};
+
+// Singleton FFmpeg instance (typed as any to avoid importing at module level)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let ffmpeg: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let ffmpegLoading: Promise<any> | null = null;
 
 /**
- * Renders a caption overlay on the canvas for the current scene.
- * Shows speaker name (if single speaker, not narrator) above dialogue text.
- * Style matches reference: dark rounded background, speaker name smaller/lighter.
+ * Load FFmpeg with dynamic imports to avoid SSR/edge runtime issues
  */
-function renderCaption(
-  ctx: CanvasRenderingContext2D,
-  scene: Scene,
-  canvasWidth: number,
-  canvasHeight: number
-): void {
-  // Get text content - prefer dialogue array, fall back to voiceoverText
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const loadFFmpeg = async (onProgress: (msg: string) => void): Promise<any> => {
+  if (ffmpeg && ffmpeg.loaded) {
+    return ffmpeg;
+  }
+
+  if (ffmpegLoading) {
+    await ffmpegLoading;
+    return ffmpeg!;
+  }
+
+  // Dynamic import to avoid SSR issues
+  const { FFmpeg } = await import('@ffmpeg/ffmpeg');
+  const { toBlobURL } = await import('@ffmpeg/util');
+
+  ffmpeg = new FFmpeg();
+
+  ffmpeg.on('log', ({ message }: { message: string }) => {
+    console.log('[FFmpeg]', message);
+  });
+
+  ffmpeg.on('progress', ({ progress }: { progress: number }) => {
+    if (progress > 0 && progress <= 1) {
+      onProgress(`Encoding: ${Math.round(progress * 100)}%`);
+    }
+  });
+
+  ffmpegLoading = (async () => {
+    onProgress("Loading FFmpeg (first time may take a moment)...");
+
+    // Use CDN for FFmpeg core files
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+
+    await ffmpeg!.load({
+      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+    });
+  })();
+
+  await ffmpegLoading;
+  ffmpegLoading = null;
+
+  return ffmpeg;
+};
+
+/**
+ * Get caption text for a scene
+ */
+const getCaptionText = (scene: Scene): { speaker: string; text: string } | null => {
   const dialogueLines = scene.dialogue || [];
   const text = dialogueLines.length > 0
     ? dialogueLines.map(d => d.text).join(' ')
     : scene.voiceoverText;
 
-  if (!text || text.trim().length === 0) return;
+  if (!text || text.trim().length === 0) return null;
 
   // Only show speaker name if SINGLE speaker and not narrator
-  let speakerName = '';
+  let speaker = '';
   if (dialogueLines.length === 1 && dialogueLines[0].speaker && dialogueLines[0].speaker !== 'narrator') {
-    speakerName = dialogueLines[0].speaker;
+    speaker = dialogueLines[0].speaker;
   }
 
-  // Style constants matching reference screenshot
-  const padding = 16;
-  const margin = 30;
-  const maxWidth = canvasWidth - (margin * 2);
-  const fontSize = Math.round(canvasHeight * 0.025); // ~18px for 720p
+  return { speaker, text: text.trim() };
+};
+
+/**
+ * Escape text for FFmpeg drawtext filter
+ */
+const escapeDrawText = (text: string): string => {
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "'\\''")
+    .replace(/:/g, '\\:')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/%/g, '\\%');
+};
+
+/**
+ * Build drawtext filter for captions
+ */
+const buildCaptionFilter = (
+  scenes: Scene[],
+  clipDuration: number,
+  width: number,
+  height: number
+): string => {
+  const filters: string[] = [];
+  const fontSize = Math.round(height * 0.025);
   const nameSize = Math.round(fontSize * 0.75);
-  const lineHeight = fontSize * 1.4;
-  const radius = 12;
+  const boxPadding = 16;
+  const bottomMargin = 30;
 
-  // Setup font for text measurement
-  ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+  scenes.forEach((scene, index) => {
+    const caption = getCaptionText(scene);
+    if (!caption) return;
 
-  // Wrap text to fit within maxWidth
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let currentLine = '';
+    const startTime = index * clipDuration;
+    const endTime = (index + 1) * clipDuration;
+    const yPosition = height - bottomMargin - fontSize * 2;
 
-  for (const word of words) {
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-    const testWidth = ctx.measureText(testLine).width;
-    if (testWidth > maxWidth - padding * 2) {
-      if (currentLine) lines.push(currentLine);
-      currentLine = word;
-    } else {
-      currentLine = testLine;
+    // Draw semi-transparent background box
+    filters.push(
+      `drawbox=x=(w-tw)/2-${boxPadding}:y=${yPosition - boxPadding}:w=tw+${boxPadding * 2}:h=th+${boxPadding * 2}:color=black@0.75:t=fill:enable='between(t,${startTime},${endTime})'`
+    );
+
+    // Draw speaker name if present
+    if (caption.speaker) {
+      filters.push(
+        `drawtext=text='${escapeDrawText(caption.speaker)}':fontsize=${nameSize}:fontcolor=white@0.7:x=(w-tw)/2:y=${yPosition - fontSize}:enable='between(t,${startTime},${endTime})'`
+      );
     }
-  }
-  if (currentLine) lines.push(currentLine);
 
-  // Calculate box dimensions
-  const textHeight = lines.length * lineHeight;
-  const nameHeight = speakerName ? nameSize + 8 : 0;
-  const boxHeight = textHeight + nameHeight + padding * 2;
+    // Draw main caption text
+    filters.push(
+      `drawtext=text='${escapeDrawText(caption.text)}':fontsize=${fontSize}:fontcolor=white:x=(w-tw)/2:y=${yPosition}:enable='between(t,${startTime},${endTime})'`
+    );
+  });
 
-  // Calculate box width based on widest line
-  let maxLineWidth = 0;
-  for (const line of lines) {
-    const lineWidth = ctx.measureText(line).width;
-    if (lineWidth > maxLineWidth) maxLineWidth = lineWidth;
-  }
-  // Also consider speaker name width
-  if (speakerName) {
-    ctx.font = `${nameSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-    const nameWidth = ctx.measureText(speakerName).width;
-    if (nameWidth > maxLineWidth) maxLineWidth = nameWidth;
-  }
-
-  const boxWidth = Math.min(maxLineWidth + padding * 2, maxWidth);
-  const boxX = (canvasWidth - boxWidth) / 2;
-  const boxY = canvasHeight - boxHeight - margin;
-
-  // Draw rounded rectangle background
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-  ctx.beginPath();
-  // Use roundRect if available, otherwise fall back to regular rect
-  if (ctx.roundRect) {
-    ctx.roundRect(boxX, boxY, boxWidth, boxHeight, radius);
-  } else {
-    // Fallback: draw rounded rect manually
-    ctx.moveTo(boxX + radius, boxY);
-    ctx.lineTo(boxX + boxWidth - radius, boxY);
-    ctx.quadraticCurveTo(boxX + boxWidth, boxY, boxX + boxWidth, boxY + radius);
-    ctx.lineTo(boxX + boxWidth, boxY + boxHeight - radius);
-    ctx.quadraticCurveTo(boxX + boxWidth, boxY + boxHeight, boxX + boxWidth - radius, boxY + boxHeight);
-    ctx.lineTo(boxX + radius, boxY + boxHeight);
-    ctx.quadraticCurveTo(boxX, boxY + boxHeight, boxX, boxY + boxHeight - radius);
-    ctx.lineTo(boxX, boxY + radius);
-    ctx.quadraticCurveTo(boxX, boxY, boxX + radius, boxY);
-    ctx.closePath();
-  }
-  ctx.fill();
-
-  // Draw speaker name (if exists) - smaller, lighter
-  let textY = boxY + padding;
-  if (speakerName) {
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    ctx.font = `${nameSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-    ctx.fillText(speakerName, boxX + padding, textY + nameSize);
-    textY += nameSize + 8;
-  }
-
-  // Draw dialogue text - larger, white
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-  for (const line of lines) {
-    ctx.fillText(line, boxX + padding, textY + fontSize);
-    textY += lineHeight;
-  }
-}
-
-// Video duration per clip based on model
-// Veo generates ~8 second videos
-// Seedance generates ~4 second videos
-const VIDEO_DURATION_BY_MODEL: Record<VideoModel, number> = {
-  'veo-3.1': 8,
-  'seedance-1.5': 4,
+  return filters.join(',');
 };
 
 export const composeAndExportVideo = async (
@@ -133,275 +146,204 @@ export const composeAndExportVideo = async (
   aspectRatio: AspectRatio = '16:9',
   videoModel: VideoModel = 'veo-3.1',
   includeMusic: boolean = true,
-  customClipDuration?: number,  // Override the model-based duration
-  enableCaptions: boolean = false  // Render captions on video
+  customClipDuration?: number,
+  enableCaptions: boolean = false
 ): Promise<Blob> => {
-
-  // Use custom duration if provided, otherwise fall back to model-based duration
   const clipDuration = customClipDuration ?? VIDEO_DURATION_BY_MODEL[videoModel];
 
-  onProgress("Initializing compositor...");
+  // Dynamic import fetchFile to avoid SSR issues
+  const { fetchFile } = await import('@ffmpeg/util');
 
-  const { width: canvasWidth, height: canvasHeight } = getCanvasDimensions(aspectRatio);
-  const canvas = document.createElement('canvas');
-  canvas.width = canvasWidth;
-  canvas.height = canvasHeight;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error("Could not create canvas context");
+  // Load FFmpeg
+  const ff = await loadFFmpeg(onProgress);
 
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-  const audioCtx = new AudioContextClass();
-  const dest = audioCtx.createMediaStreamDestination();
-
-  const loadAudio = async (url: string) => {
-    const response = await fetch(url);
-    const arrayBuffer = await response.arrayBuffer();
-    return await audioCtx.decodeAudioData(arrayBuffer);
-  };
-
-  onProgress("Loading audio tracks...");
-  let voiceBuffer: AudioBuffer | null = null;
-  if (masterAudioUrl) {
-    voiceBuffer = await loadAudio(masterAudioUrl);
-  }
-
-  let musicBuffer: AudioBuffer | null = null;
-  if (includeMusic && backgroundMusicUrl) {
-    try {
-      musicBuffer = await loadAudio(backgroundMusicUrl);
-    } catch (e) {
-      console.warn("Failed to load music for export", e);
-    }
-  }
-
-  // Debug: Log video URL mapping
-  const scenesWithVideoUrls = scenes.filter(s => videoUrls[s.id]);
-  console.log(`[Export] Found ${scenesWithVideoUrls.length} scenes with video URLs:`,
-    scenesWithVideoUrls.map(s => ({ id: s.id, hasUrl: !!videoUrls[s.id] })));
-  console.log(`[Export] Video URL keys:`, Object.keys(videoUrls));
-
-  onProgress(`Pre-loading ${scenesWithVideoUrls.length} video scenes...`);
-  const videoElements: Record<number, HTMLVideoElement> = {};
-  const videoAudioSources: Record<number, { source: MediaElementAudioSourceNode; gain: GainNode }> = {};
-
-  const loadVideo = (id: number, url: string): Promise<HTMLVideoElement> => {
-    return new Promise((resolve, reject) => {
-      const vid = document.createElement('video');
-      vid.crossOrigin = "anonymous";
-      // Always use proxy during export to avoid CORS issues when drawing to canvas
-      // The proxy handles R2, Seedance/Kie.ai, and other allowed video sources
-      const proxyUrl = `/api/proxy-video?url=${encodeURIComponent(url)}`;
-      vid.src = proxyUrl;
-      vid.playsInline = true;
-      vid.preload = "auto";
-      // Note: Do NOT mute - we capture audio via MediaElementAudioSourceNode
-      vid.oncanplaythrough = () => {
-        console.log(`[Export] Video ${id} loaded successfully, duration: ${vid.duration}s`);
-        resolve(vid);
-      };
-      vid.onerror = (e) => {
-        console.error(`[Export] Failed to load video ${id}:`, e);
-        reject(e);
-      };
-      vid.load();
-    });
-  };
-
-  await Promise.all(scenes.map(async (scene) => {
-    if (videoUrls[scene.id]) {
-      let vid: HTMLVideoElement;
-      try {
-        vid = await loadVideo(scene.id, videoUrls[scene.id]);
-        videoElements[scene.id] = vid;
-      } catch (loadError) {
-        console.error(`[Export] Skipping scene ${scene.id} due to load error:`, loadError);
-        return; // Continue with other videos
-      }
-
-      // Create audio source from video element for SFX mixing
-      try {
-        const source = audioCtx.createMediaElementSource(vid);
-        const gainNode = audioCtx.createGain();
-        gainNode.gain.value = 0; // Start muted, we'll unmute when scene is active
-        source.connect(gainNode);
-        gainNode.connect(dest);
-        videoAudioSources[scene.id] = { source, gain: gainNode };
-      } catch (e) {
-        console.warn(`Could not create audio source for scene ${scene.id}`, e);
-      }
-    }
-  }));
-
-  // Log final video count
-  const loadedVideoCount = Object.keys(videoElements).length;
-  console.log(`[Export] Successfully loaded ${loadedVideoCount} videos for export`);
-
-  const canvasStream = canvas.captureStream(30);
-  const audioTrack = dest.stream.getAudioTracks()[0];
-  if (audioTrack) canvasStream.addTrack(audioTrack);
-
-  // Use higher bitrate for better quality export
-  // VP9 with opus audio, 8Mbps video bitrate for high quality
-  const recorderOptions: MediaRecorderOptions = {
-    mimeType: 'video/webm;codecs=vp9,opus',
-    videoBitsPerSecond: 8000000, // 8 Mbps for high quality
-    audioBitsPerSecond: 192000,  // 192 kbps audio
-  };
-  const recorder = new MediaRecorder(canvasStream, recorderOptions);
-
-  const chunks: Blob[] = [];
-  recorder.ondataavailable = (e) => {
-    if (e.data.size > 0) chunks.push(e.data);
-  };
-
-  // Filter to only scenes that have videos
+  // Filter scenes with videos
   const scenesWithVideo = scenes.filter(s => videoUrls[s.id]);
-
-  // Total duration = max(voiceover, all videos)
-  // Video duration depends on model: Veo ~8s, Seedance ~4s
-  const totalVideoDuration = scenesWithVideo.length * clipDuration;
-  const voiceDuration = voiceBuffer?.duration || 0;
-  const totalDuration = Math.max(voiceDuration, totalVideoDuration);
-
-  // Voice at full volume (if available)
-  let voiceNode: AudioBufferSourceNode | null = null;
-  if (voiceBuffer) {
-    voiceNode = audioCtx.createBufferSource();
-    voiceNode.buffer = voiceBuffer;
-    const voiceGain = audioCtx.createGain();
-    voiceGain.gain.value = 1.0;
-    voiceNode.connect(voiceGain);
-    voiceGain.connect(dest);
+  if (scenesWithVideo.length === 0) {
+    throw new Error("No videos to export");
   }
 
-  // Background music at 20% volume
-  if (musicBuffer) {
-    const musicNode = audioCtx.createBufferSource();
-    musicNode.buffer = musicBuffer;
-    musicNode.loop = true;
-    const musicGain = audioCtx.createGain();
-    musicGain.gain.value = 0.2;
-    musicNode.connect(musicGain);
-    musicGain.connect(dest);
-    musicNode.start(0);
+  onProgress(`Downloading ${scenesWithVideo.length} video clips...`);
+
+  // Download all video files
+  const videoFiles: { name: string; scene: Scene }[] = [];
+  for (let i = 0; i < scenesWithVideo.length; i++) {
+    const scene = scenesWithVideo[i];
+    const url = videoUrls[scene.id];
+    const proxyUrl = `/api/proxy-video?url=${encodeURIComponent(url)}`;
+
+    onProgress(`Downloading video ${i + 1}/${scenesWithVideo.length}...`);
+
+    try {
+      const data = await fetchFile(proxyUrl);
+      const fileName = `video_${i}.mp4`;
+      await ff.writeFile(fileName, data);
+      videoFiles.push({ name: fileName, scene });
+    } catch (err) {
+      console.error(`Failed to download video ${scene.id}:`, err);
+      throw new Error(`Failed to download video for scene ${scene.id}`);
+    }
   }
 
-  // SFX volume level (40% to not overpower voiceover)
-  const SFX_VOLUME = 0.4;
+  // Download audio files
+  let hasVoiceover = false;
+  let hasMusic = false;
 
-  return new Promise((resolve, reject) => {
-    recorder.onstop = () => {
-      onProgress("Finalizing file...");
-      const blob = new Blob(chunks, { type: 'video/webm' });
-      audioCtx.close();
-      resolve(blob);
-    };
+  if (masterAudioUrl) {
+    onProgress("Downloading voiceover...");
+    try {
+      const voiceData = await fetchFile(masterAudioUrl);
+      await ff.writeFile('voiceover.mp3', voiceData);
+      hasVoiceover = true;
+    } catch (err) {
+      console.warn("Failed to download voiceover:", err);
+    }
+  }
 
-    recorder.onerror = reject;
+  if (includeMusic && backgroundMusicUrl) {
+    onProgress("Downloading background music...");
+    try {
+      const musicData = await fetchFile(backgroundMusicUrl);
+      await ff.writeFile('music.mp3', musicData);
+      hasMusic = true;
+    } catch (err) {
+      console.warn("Failed to download music:", err);
+    }
+  }
 
-    recorder.start();
-    if (voiceNode) voiceNode.start(0);
-    const startTime = performance.now();
+  // Create concat file for video concatenation
+  onProgress("Preparing video concatenation...");
+  const concatContent = videoFiles.map(v => `file '${v.name}'`).join('\n');
+  await ff.writeFile('concat.txt', concatContent);
 
-    let animationFrameId: number;
-    let lastSceneIndex: number = -1;
-    // Track which scenes have already played their video (to prevent looping)
-    const sceneVideoPlayed = new Set<number>();
+  // Calculate dimensions
+  const width = aspectRatio === '16:9' ? 1280 : 720;
+  const height = aspectRatio === '16:9' ? 720 : 1280;
+  const totalDuration = scenesWithVideo.length * clipDuration;
 
-    const renderLoop = () => {
-      const now = (performance.now() - startTime) / 1000;
+  // Build FFmpeg command
+  onProgress("Encoding video...");
 
-      if (now >= totalDuration) {
-        recorder.stop();
-        cancelAnimationFrame(animationFrameId);
-        return;
-      }
+  // Step 1: Concatenate videos
+  await ff.exec([
+    '-f', 'concat',
+    '-safe', '0',
+    '-i', 'concat.txt',
+    '-c', 'copy',
+    'concatenated.mp4'
+  ]);
 
-      // Calculate current scene based on video timing
-      const sceneIndex = Math.min(
-        Math.floor(now / clipDuration),
-        scenesWithVideo.length - 1
-      );
-      const currentScene = scenesWithVideo[sceneIndex];
+  // Build filter complex for audio mixing and captions
+  let filterComplex = '';
+  let audioInputs: string[] = [];
+  let inputIndex = 0;
 
-      if (!currentScene) {
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        animationFrameId = requestAnimationFrame(renderLoop);
-        return;
-      }
+  // Input 0: concatenated video
+  const ffmpegArgs: string[] = ['-i', 'concatenated.mp4'];
+  inputIndex++;
 
-      // Detect scene change
-      const sceneChanged = sceneIndex !== lastSceneIndex;
-      if (sceneChanged) {
-        lastSceneIndex = sceneIndex;
-        // Reset the "played" flag for this scene so it can play
-        // (in case we're re-entering a scene, though unlikely in linear playback)
+  // Input 1: voiceover (if exists)
+  if (hasVoiceover) {
+    ffmpegArgs.push('-i', 'voiceover.mp3');
+    audioInputs.push(`[${inputIndex}:a]volume=1.0[voice]`);
+    inputIndex++;
+  }
 
-        // Switch scene audio: unmute current, mute others
-        for (const [idStr, audioData] of Object.entries(videoAudioSources)) {
-          const id = Number(idStr);
-          if (id === currentScene.id) {
-            audioData.gain.gain.setValueAtTime(SFX_VOLUME, audioCtx.currentTime);
-          } else {
-            audioData.gain.gain.setValueAtTime(0, audioCtx.currentTime);
-          }
-        }
+  // Input 2: music (if exists)
+  if (hasMusic) {
+    ffmpegArgs.push('-i', 'music.mp3');
+    // Loop music to match video duration
+    audioInputs.push(`[${inputIndex}:a]aloop=loop=-1:size=2e+09,atrim=0:${totalDuration},volume=0.2[music]`);
+    inputIndex++;
+  }
 
-        // Pause all other videos and start the current one
-        Object.entries(videoElements).forEach(([idStr, v]) => {
-          const id = Number(idStr);
-          if (id !== currentScene.id && !v.paused) {
-            v.pause();
-          }
-        });
-      }
+  // Build audio mix filter
+  let audioMix = '';
+  if (hasVoiceover && hasMusic) {
+    filterComplex = `${audioInputs.join(';')};[voice][music]amix=inputs=2:duration=longest[aout]`;
+    audioMix = '[aout]';
+  } else if (hasVoiceover) {
+    filterComplex = audioInputs[0];
+    audioMix = '[voice]';
+  } else if (hasMusic) {
+    filterComplex = audioInputs[0];
+    audioMix = '[music]';
+  }
 
-      const vid = videoElements[currentScene.id];
-      if (vid) {
-        // Only start the video if it hasn't played for this scene yet
-        if (vid.paused && !sceneVideoPlayed.has(sceneIndex)) {
-          vid.currentTime = 0; // Always start from beginning when entering a new scene
-          vid.play().catch((err) => {
-            console.warn('Video play failed:', err);
-          });
-        }
+  // Add caption filter if enabled
+  let videoFilter = '';
+  if (enableCaptions) {
+    const captionFilter = buildCaptionFilter(scenesWithVideo.map(v => v.scene), clipDuration, width, height);
+    if (captionFilter) {
+      videoFilter = captionFilter;
+    }
+  }
 
-        // Mark as played when video ends (don't restart it)
-        if (vid.ended && !sceneVideoPlayed.has(sceneIndex)) {
-          sceneVideoPlayed.add(sceneIndex);
-          // Keep the last frame displayed - don't do anything, just let drawImage use the last frame
-        }
+  // Build final FFmpeg command
+  const outputArgs: string[] = [];
 
-        // Draw video frame to canvas (works even when paused/ended - shows last frame)
-        try {
-          ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
-        } catch (err) {
-          console.warn('drawImage failed:', err);
-          ctx.fillStyle = '#000';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-        }
+  if (filterComplex || videoFilter) {
+    let fullFilter = '';
 
-        // Render captions on top of video if enabled
-        if (enableCaptions) {
-          try {
-            renderCaption(ctx, currentScene, canvas.width, canvas.height);
-          } catch (captionErr) {
-            console.warn('Caption rendering failed:', captionErr);
-          }
-        }
-      } else {
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      }
+    if (videoFilter && filterComplex) {
+      // Both video and audio filters
+      fullFilter = `[0:v]${videoFilter}[vout];${filterComplex}`;
+      outputArgs.push('-filter_complex', fullFilter);
+      outputArgs.push('-map', '[vout]');
+      outputArgs.push('-map', audioMix);
+    } else if (videoFilter) {
+      // Only video filter (captions)
+      outputArgs.push('-vf', videoFilter);
+      outputArgs.push('-map', '0:v');
+      outputArgs.push('-map', '0:a?'); // Copy audio from video if exists
+    } else if (filterComplex) {
+      // Only audio filter
+      outputArgs.push('-filter_complex', filterComplex);
+      outputArgs.push('-map', '0:v');
+      outputArgs.push('-map', audioMix);
+    }
+  } else {
+    // No filters, just copy
+    outputArgs.push('-c', 'copy');
+  }
 
-      onProgress(`Rendering: ${(now / totalDuration * 100).toFixed(0)}%`);
-      animationFrameId = requestAnimationFrame(renderLoop);
-    };
+  // Output settings
+  outputArgs.push(
+    '-c:v', 'libx264',
+    '-preset', 'fast',
+    '-crf', '23',
+    '-c:a', 'aac',
+    '-b:a', '192k',
+    '-movflags', '+faststart',
+    '-y',
+    'output.mp4'
+  );
 
-    renderLoop();
-  });
+  // Execute final encoding
+  await ff.exec([...ffmpegArgs, ...outputArgs]);
+
+  // Read output file
+  onProgress("Finalizing...");
+  const outputData = await ff.readFile('output.mp4');
+
+  // Clean up files
+  const filesToDelete = [
+    'concat.txt',
+    'concatenated.mp4',
+    'output.mp4',
+    ...videoFiles.map(v => v.name)
+  ];
+  if (hasVoiceover) filesToDelete.push('voiceover.mp3');
+  if (hasMusic) filesToDelete.push('music.mp3');
+
+  for (const file of filesToDelete) {
+    try {
+      await ff.deleteFile(file);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+
+  // Return as Blob
+  return new Blob([outputData], { type: 'video/mp4' });
 };

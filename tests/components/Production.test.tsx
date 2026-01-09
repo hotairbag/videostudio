@@ -25,7 +25,7 @@ jest.mock('@/services/geminiService', () => ({
 
 // Mock the videoCompositor
 jest.mock('@/utils/videoCompositor', () => ({
-  composeAndExportVideo: jest.fn().mockResolvedValue(new Blob(['video'], { type: 'video/webm' })),
+  composeAndExportVideo: jest.fn().mockResolvedValue(new Blob(['video'], { type: 'video/mp4' })),
 }));
 
 describe('Production', () => {
