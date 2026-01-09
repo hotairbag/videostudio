@@ -756,9 +756,7 @@ RULES:
 - Correct anatomy and hands (no extra fingers)
 
 Story Scenes (Panels 1-6):
-${sceneDescriptions}
-
-Panel 6 is the FINAL scene of the entire story - it should feel like a satisfying conclusion.`;
+${sceneDescriptions}`;
 };
 
 /**
