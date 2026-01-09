@@ -272,7 +272,7 @@ export const composeAndExportVideo = async (
   // Add caption filter if enabled
   let videoFilter = '';
   if (enableCaptions) {
-    const captionFilter = buildCaptionFilter(scenesWithVideo.map(v => v.scene), clipDuration, width, height);
+    const captionFilter = buildCaptionFilter(scenesWithVideo, clipDuration, width, height);
     if (captionFilter) {
       videoFilter = captionFilter;
     }
