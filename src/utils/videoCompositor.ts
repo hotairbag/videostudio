@@ -80,7 +80,22 @@ function renderCaption(
   // Draw rounded rectangle background
   ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
   ctx.beginPath();
-  ctx.roundRect(boxX, boxY, boxWidth, boxHeight, radius);
+  // Use roundRect if available, otherwise fall back to regular rect
+  if (ctx.roundRect) {
+    ctx.roundRect(boxX, boxY, boxWidth, boxHeight, radius);
+  } else {
+    // Fallback: draw rounded rect manually
+    ctx.moveTo(boxX + radius, boxY);
+    ctx.lineTo(boxX + boxWidth - radius, boxY);
+    ctx.quadraticCurveTo(boxX + boxWidth, boxY, boxX + boxWidth, boxY + radius);
+    ctx.lineTo(boxX + boxWidth, boxY + boxHeight - radius);
+    ctx.quadraticCurveTo(boxX + boxWidth, boxY + boxHeight, boxX + boxWidth - radius, boxY + boxHeight);
+    ctx.lineTo(boxX + radius, boxY + boxHeight);
+    ctx.quadraticCurveTo(boxX, boxY + boxHeight, boxX, boxY + boxHeight - radius);
+    ctx.lineTo(boxX, boxY + radius);
+    ctx.quadraticCurveTo(boxX, boxY, boxX + radius, boxY);
+    ctx.closePath();
+  }
   ctx.fill();
 
   // Draw speaker name (if exists) - smaller, lighter
@@ -372,7 +387,11 @@ export const composeAndExportVideo = async (
 
         // Render captions on top of video if enabled
         if (enableCaptions) {
-          renderCaption(ctx, currentScene, canvas.width, canvas.height);
+          try {
+            renderCaption(ctx, currentScene, canvas.width, canvas.height);
+          } catch (captionErr) {
+            console.warn('Caption rendering failed:', captionErr);
+          }
         }
       } else {
         ctx.fillStyle = '#000';
